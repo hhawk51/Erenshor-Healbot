@@ -52,4 +52,14 @@
       <Private>False</Private>
     </Reference>
   </ItemGroup>
+
+  <!-- Copy assets to output folder under 'healbot' -->
+  <Target Name="PostBuild_CopyHealbotAssets" AfterTargets="Build">
+    <ItemGroup>
+      <HealbotAssets Include="$(ProjectDir)hb.png" Condition="Exists('$(ProjectDir)hb.png')" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)healbot" Condition="@(HealbotAssets) != ''" />
+    <Copy SourceFiles="@(HealbotAssets)" DestinationFiles="@(HealbotAssets->'$(OutDir)healbot\%(Filename)%(Extension)')" Condition="@(HealbotAssets) != ''" />
+  </Target>
+
 </Project>

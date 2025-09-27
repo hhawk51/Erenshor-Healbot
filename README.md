@@ -9,7 +9,7 @@ A BepInEx plugin that adds click‑to‑heal, a simple spell config UI, and help
 - Spell picker with search, A–Z sorting, and cached results for fast open.
 - Beneficial‑only protection (default): blocks damage spells from being cast via Healbot.
 - Cooldown awareness: respects engine cooldowns when available and applies a fallback GCD.
-- Optional debug overlay to see detected party and current settings.
+ 
 
 ## Requirements
 
@@ -57,7 +57,7 @@ Note: F1–F4 currently cast using the Left Click spell binding.
 - `Spells.DefaultGCDSeconds` (float) – Fallback minimum time between casts (default: 1.5)
 - `Keybinds.HealPlayer|HealMember1|HealMember2|HealMember3` – Manual heal keys
 - `KeybindSpells.HealPlayerSpell|…` – Spells cast by those hotkeys
-- `Debug.DebugOverlay` (bool) – Show overlay with detected party and info
+ 
 
 ## Notes on protection & cooldowns
 

@@ -392,7 +392,6 @@ namespace ErenshorHealbot
                     {
                         if (comp != null && comp.GetType().Name == "TestClickHandler")
                         {
-                            Debug.Log($"Removing old TestClickHandler from {go.name}");
                             Destroy(comp);
                         }
                     }

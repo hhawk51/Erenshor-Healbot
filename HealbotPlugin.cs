@@ -30,7 +30,6 @@ namespace ErenshorHealbot
         private ConfigEntry<string> middleClickSpell;
         private ConfigEntry<bool> autoTargetEnabled;
         private ConfigEntry<float> healthThreshold;
-        private ConfigEntry<bool> debugOverlay;
         private ConfigEntry<bool> enablePartyUIHook;
         private ConfigEntry<bool> restrictToBeneficial;
         private ConfigEntry<float> defaultGCDSeconds;
@@ -58,7 +57,6 @@ namespace ErenshorHealbot
             middleClickSpell = Config.Bind("Spells", "MiddleClick", "Group Heal", "Spell to cast on middle click");
             autoTargetEnabled = Config.Bind("Automation", "AutoTarget", true, "Automatically target low health members");
             healthThreshold = Config.Bind("Automation", "HealthThreshold", 0.5f, "Health percentage to consider 'low' (0.0-1.0)");
-            debugOverlay = Config.Bind("Debug", "DebugOverlay", false, "Show a small on-screen debug overlay");
             enablePartyUIHook = Config.Bind("UI", "EnablePartyUIHook", true, "Enable click-to-heal on existing party UI");
             restrictToBeneficial = Config.Bind("Spells", "RestrictToBeneficial", true, "Only allow beneficial spells (heals/buffs) when casting via Healbot");
             defaultGCDSeconds = Config.Bind("Spells", "DefaultGCDSeconds", 1.5f, "Fallback minimum time between casts when underlying cooldown info is unavailable");
@@ -629,45 +627,7 @@ namespace ErenshorHealbot
 
         public bool RestrictToBeneficialEnabled => restrictToBeneficial.Value;
 
-        private void OnGUI()
-        {
-            if (!debugOverlay.Value) return;
-            GUI.color = Color.white;
-            var rect = new Rect(10, 10, 420, 22);
-            int gmCount = groupMembers?.Count ?? 0;
-            string playerName = (GameData.PlayerStats != null) ? GameData.PlayerStats.MyName : "(none)";
-            string hookStatus = partyUIHook != null ? "Active" : "Inactive";
-            GUI.Label(rect, $"Healbot: PartyHook {hookStatus} | Members: {gmCount} | Player: {playerName}");
-
-            // Show detected member names for debugging
-            float y = 34f;
-            if (gmCount > 0)
-            {
-                foreach (var gm in groupMembers)
-                {
-                    var maxHp = Mathf.Max(1, gm.stats.CurrentMaxHP);
-                    var hpPct = (int)(100f * gm.stats.CurrentHP / (float)maxHp);
-                    GUI.Label(new Rect(10, y, 600, 18), $"- {gm.name} HP {gm.stats.CurrentHP}/{maxHp} ({hpPct}%)");
-                    y += 18f;
-                }
-            }
-
-            // Show party UI hook instructions
-            if (partyUIHook != null)
-            {
-                y += 10f;
-                GUI.Label(new Rect(10, y, 600, 18), "Click on party member names/HP bars to heal them!");
-                y += 18f;
-            }
-
-            // Show keybind instructions
-            y += 10f;
-            GUI.Label(new Rect(10, y, 600, 18), $"Keybinds: {healPlayerKey.Value}=Player, {healMember1Key.Value}=Member1, {healMember2Key.Value}=Member2, {healMember3Key.Value}=Member3");
-            y += 18f;
-            GUI.Label(new Rect(10, y, 600, 18), $"Spells: {healPlayerSpell.Value} | {healMember1Spell.Value} | {healMember2Spell.Value} | {healMember3Spell.Value}");
-            y += 18f;
-            GUI.Label(new Rect(10, y, 600, 18), $"Click Spells: L={leftClickSpell.Value}, R={rightClickSpell.Value}, M={middleClickSpell.Value} | Toggle: {toggleUIKey.Value}");
-        }
+        // Debug overlay removed
 
         private void OnDestroy()
         {

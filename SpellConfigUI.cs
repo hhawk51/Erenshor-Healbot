@@ -42,7 +42,7 @@ namespace ErenshorHealbot
         public void Initialize(HealbotPlugin healbotPlugin)
         {
             plugin = healbotPlugin;
-            Debug.Log("[SpellConfigUI] Initialize called");
+            
 
             // Create UI immediately but keep it hidden
             CreateSpellConfigUI();
@@ -67,11 +67,11 @@ namespace ErenshorHealbot
         {
             try
             {
-                Debug.Log("[SpellConfigUI] ToggleConfigWindow called");
+                
 
                 if (configPanel == null)
                 {
-                    Debug.Log("[SpellConfigUI] Config panel is null, creating UI");
+                    
                     CreateSpellConfigUI();
                 }
 
@@ -80,7 +80,7 @@ namespace ErenshorHealbot
                 if (backdrop != null) backdrop.SetActive(isWindowVisible);
                 if (launcherButton != null) launcherButton.SetActive(!isWindowVisible);
 
-                Debug.Log($"[SpellConfigUI] Window visibility: {isWindowVisible}");
+                
 
                 if (isWindowVisible)
                 {
@@ -104,11 +104,11 @@ namespace ErenshorHealbot
         {
             try
             {
-                Debug.Log("[SpellConfigUI] Creating spell config UI");
+                
 
                 if (configPanel != null)
                 {
-                    Debug.Log("[SpellConfigUI] UI already exists");
+                    
                     return;
                 }
 
@@ -162,7 +162,7 @@ namespace ErenshorHealbot
                 configPanel.SetActive(false);
                 if (backdrop != null) backdrop.SetActive(false);
                 if (launcherButton != null) launcherButton.SetActive(true);
-                Debug.Log("[SpellConfigUI] UI created successfully");
+                
             }
             catch (System.Exception ex)
             {
@@ -314,7 +314,7 @@ namespace ErenshorHealbot
             inputField.placeholder = placeholderText;
             inputField.targetGraphic = inputImage;
 
-            Debug.Log($"[SpellConfigUI] Created input field for {labelText}");
+            
         }
 
         private void CreatePickButton(Vector2 position, InputField targetField)
@@ -615,13 +615,13 @@ namespace ErenshorHealbot
             buttonText.fontStyle = FontStyle.Bold;
             buttonText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
-            Debug.Log($"[SpellConfigUI] Created button: {text}");
+            
             return button;
         }
 
         private void RefreshAvailableSpells()
         {
-            Debug.Log("[SpellConfigUI] Refreshing available spells");
+            
             availableSpells.Clear();
             availableSpells.Add("None");
 
@@ -656,7 +656,7 @@ namespace ErenshorHealbot
                     }
                 }
 
-                Debug.Log($"[SpellConfigUI] Total spells found: {availableSpells.Count - 1}");
+                
             }
             catch (System.Exception ex)
             {
@@ -667,13 +667,13 @@ namespace ErenshorHealbot
             if (availableSpells.Count <= 1)
             {
                 availableSpells.AddRange(new[] { "Minor Healing", "Major Healing", "Group Heal" });
-                Debug.Log("[SpellConfigUI] Added fallback spells");
+                
             }
         }
 
         private void UpdateInputFields()
         {
-            Debug.Log("[SpellConfigUI] Input fields are ready for text input");
+            
             // Input fields don't need option updates like dropdowns
             // Users can type spell names directly
         }
@@ -692,7 +692,7 @@ namespace ErenshorHealbot
                 SetInputFieldValue(rightClickInput, rightSpell);
                 SetInputFieldValue(middleClickInput, middleSpell);
 
-                Debug.Log($"[SpellConfigUI] Loaded settings: L={leftSpell}, R={rightSpell}, M={middleSpell}");
+                
             }
             catch (System.Exception ex)
             {
@@ -705,12 +705,12 @@ namespace ErenshorHealbot
             if (inputField == null) return;
 
             inputField.text = string.IsNullOrEmpty(value) ? "" : value;
-            Debug.Log($"[SpellConfigUI] Set input field to '{value}'");
+            
         }
 
         private void RefreshSpells()
         {
-            Debug.Log("[SpellConfigUI] Manual refresh triggered");
+            
             RefreshAvailableSpells();
             UpdateInputFields();
             UpdateStatusText("Spells refreshed");
@@ -732,7 +732,7 @@ namespace ErenshorHealbot
                 plugin.UpdateSpellBindings(leftSpell, rightSpell, middleSpell);
                 UpdateStatusText("Settings saved successfully!");
 
-                Debug.Log($"[SpellConfigUI] Saved: L={leftSpell}, R={rightSpell}, M={middleSpell}");
+                
             }
             catch (System.Exception ex)
             {
@@ -755,7 +755,7 @@ namespace ErenshorHealbot
                 }
             }
 
-            Debug.LogWarning($"[SpellConfigUI] Spell '{spellName}' not found in available spells");
+            
             return spellName; // Return as-is if not found, let the game handle it
         }
 

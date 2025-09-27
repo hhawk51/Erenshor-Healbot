@@ -32,6 +32,7 @@ namespace ErenshorHealbot
         private ConfigEntry<float> healthThreshold;
         private ConfigEntry<bool> debugOverlay;
         private ConfigEntry<bool> enablePartyUIHook;
+        private ConfigEntry<bool> restrictToBeneficial;
         private ConfigEntry<KeyCode> healPlayerKey;
         private ConfigEntry<KeyCode> healMember1Key;
         private ConfigEntry<KeyCode> healMember2Key;
@@ -58,6 +59,7 @@ namespace ErenshorHealbot
             healthThreshold = Config.Bind("Automation", "HealthThreshold", 0.5f, "Health percentage to consider 'low' (0.0-1.0)");
             debugOverlay = Config.Bind("Debug", "DebugOverlay", false, "Show a small on-screen debug overlay");
             enablePartyUIHook = Config.Bind("UI", "EnablePartyUIHook", true, "Enable click-to-heal on existing party UI");
+            restrictToBeneficial = Config.Bind("Spells", "RestrictToBeneficial", true, "Only allow beneficial spells (heals/buffs) when casting via Healbot");
             healPlayerKey = Config.Bind("Keybinds", "HealPlayer", KeyCode.F1, "Key to heal the player");
             healMember1Key = Config.Bind("Keybinds", "HealMember1", KeyCode.F2, "Key to heal party member 1");
             healMember2Key = Config.Bind("Keybinds", "HealMember2", KeyCode.F3, "Key to heal party member 2");
@@ -387,6 +389,13 @@ namespace ErenshorHealbot
                 return;
             }
 
+            // Restrict to beneficial spells if configured
+            if (restrictToBeneficial.Value && !IsBeneficialSpell(spell))
+            {
+                Logger.LogWarning($"Blocked non-beneficial spell '{spell.SpellName}' from Healbot casting (RestrictToBeneficial=true)");
+                return;
+            }
+
             // Set target and cast spell
             if (GameData.PlayerControl != null)
             {
@@ -408,13 +417,17 @@ namespace ErenshorHealbot
                 // 1) Exact (ignore case)
                 var exact = playerCaster.KnownSpells.FirstOrDefault(s =>
                     s.SpellName.Equals(spellName, StringComparison.OrdinalIgnoreCase));
-                if (exact != null) return exact;
+                if (exact != null)
+                {
+                    if (!restrictToBeneficial.Value || IsBeneficialSpell(exact)) return exact;
+                }
 
                 // 2) Normalized contains (handle Minor Heal vs Minor Healing, hyphens, spaces)
                 string Norm(string x) => new string(x.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
                 var wanted = Norm(spellName);
-                var partial = playerCaster.KnownSpells
-                    .FirstOrDefault(s => Norm(s.SpellName).Contains(wanted) || wanted.Contains(Norm(s.SpellName)));
+                var partialSeq = playerCaster.KnownSpells
+                    .Where(s => Norm(s.SpellName).Contains(wanted) || wanted.Contains(Norm(s.SpellName)));
+                var partial = restrictToBeneficial.Value ? partialSeq.FirstOrDefault(IsBeneficialSpell) : partialSeq.FirstOrDefault();
                 if (partial != null) return partial;
 
                 // 3) Heuristic heal picks if the word 'heal' is present
@@ -422,26 +435,70 @@ namespace ErenshorHealbot
                 {
                     // Prefer minor/major variants
                     if (wanted.Contains("minor"))
-                        return playerCaster.KnownSpells.FirstOrDefault(s => s.SpellName.IndexOf("minor", StringComparison.OrdinalIgnoreCase) >= 0 && s.SpellName.IndexOf("heal", StringComparison.OrdinalIgnoreCase) >= 0)
-                            ?? playerCaster.KnownSpells.FirstOrDefault(s => s.SpellName.IndexOf("healing", StringComparison.OrdinalIgnoreCase) >= 0);
+                    {
+                        var seq = playerCaster.KnownSpells.Where(s => s.SpellName.IndexOf("minor", StringComparison.OrdinalIgnoreCase) >= 0 && s.SpellName.IndexOf("heal", StringComparison.OrdinalIgnoreCase) >= 0)
+                            .Concat(playerCaster.KnownSpells.Where(s => s.SpellName.IndexOf("healing", StringComparison.OrdinalIgnoreCase) >= 0));
+                        return restrictToBeneficial.Value ? seq.FirstOrDefault(IsBeneficialSpell) : seq.FirstOrDefault();
+                    }
                     if (wanted.Contains("major"))
-                        return playerCaster.KnownSpells.FirstOrDefault(s => s.SpellName.IndexOf("major", StringComparison.OrdinalIgnoreCase) >= 0 && s.SpellName.IndexOf("heal", StringComparison.OrdinalIgnoreCase) >= 0)
-                            ?? playerCaster.KnownSpells.FirstOrDefault(s => s.SpellName.IndexOf("healing", StringComparison.OrdinalIgnoreCase) >= 0);
+                    {
+                        var seq = playerCaster.KnownSpells.Where(s => s.SpellName.IndexOf("major", StringComparison.OrdinalIgnoreCase) >= 0 && s.SpellName.IndexOf("heal", StringComparison.OrdinalIgnoreCase) >= 0)
+                            .Concat(playerCaster.KnownSpells.Where(s => s.SpellName.IndexOf("healing", StringComparison.OrdinalIgnoreCase) >= 0));
+                        return restrictToBeneficial.Value ? seq.FirstOrDefault(IsBeneficialSpell) : seq.FirstOrDefault();
+                    }
                     // Generic heal fallback
-                    return playerCaster.KnownSpells.FirstOrDefault(s => s.SpellName.IndexOf("heal", StringComparison.OrdinalIgnoreCase) >= 0 || s.SpellName.IndexOf("healing", StringComparison.OrdinalIgnoreCase) >= 0);
+                    var seqHeal = playerCaster.KnownSpells.Where(s => s.SpellName.IndexOf("heal", StringComparison.OrdinalIgnoreCase) >= 0 || s.SpellName.IndexOf("healing", StringComparison.OrdinalIgnoreCase) >= 0);
+                    return restrictToBeneficial.Value ? seqHeal.FirstOrDefault(IsBeneficialSpell) : seqHeal.FirstOrDefault();
                 }
             }
 
             // Fallback: search all spells in game data
             var allSpells = Resources.FindObjectsOfTypeAll<Spell>();
             var exactAll = allSpells.FirstOrDefault(s => s.SpellName.Equals(spellName, StringComparison.OrdinalIgnoreCase));
-            if (exactAll != null) return exactAll;
+            if (exactAll != null)
+            {
+                if (!restrictToBeneficial.Value || IsBeneficialSpell(exactAll)) return exactAll;
+            }
             // Normalized contains across all loaded assets
             string NormAll(string x) => new string(x.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
             var wantedAll = NormAll(spellName);
-            return allSpells.FirstOrDefault(s =>
+            var allSeq = allSpells.Where(s =>
                 NormAll(s.SpellName).Contains(wantedAll) || wantedAll.Contains(NormAll(s.SpellName)));
+            return restrictToBeneficial.Value ? allSeq.FirstOrDefault(IsBeneficialSpell) : allSeq.FirstOrDefault();
         }
+
+        // Heuristic: treat only clearly positive spells as beneficial
+        public bool IsBeneficialSpellName(string spellName)
+        {
+            if (string.IsNullOrEmpty(spellName)) return false;
+            var n = spellName.ToLowerInvariant();
+
+            // Positive keywords
+            string[] good = new[]
+            {
+                "heal", "healing", "regrowth", "regenerate", "regeneration", "revitalize", "revive", "resurrect",
+                "protection", "protect", "shield", "barrier", "ward", "bless", "blessing", "aura", "renew",
+                "cure", "antidote", "cleanse", "invigor", "vital", "vigor", "fortify", "haste", "buff", "group heal",
+                "presence", "blessing of", "gift", "greater heal", "supreme heal"
+            };
+            if (good.Any(k => n.Contains(k))) return true;
+
+            // Negative keywords (explicitly exclude damagey names)
+            string[] bad = new[]
+            {
+                "bolt", "blast", "shock", "strike", "smite", "quake", "fang", "thorn", "poison", "rot", "decay",
+                "death", "void", "inferno", "immolation", "storm", "lightning", "ice", "fire", "lava", "venom",
+                "anihil", "annihil", "devour", "doom", "blast", "sting", "fury", "rage", "wrath", "bite", "bleed",
+            };
+            if (bad.Any(k => n.Contains(k))) return false;
+
+            // Default to false to be safe
+            return false;
+        }
+
+        public bool IsBeneficialSpell(Spell s) => s != null && IsBeneficialSpellName(s.SpellName);
+
+        public bool RestrictToBeneficialEnabled => restrictToBeneficial.Value;
 
         private void OnGUI()
         {

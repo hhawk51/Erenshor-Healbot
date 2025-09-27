@@ -84,10 +84,14 @@ namespace ErenshorHealbot
 
                 if (isWindowVisible)
                 {
-                    RefreshAvailableSpells();
+                    // Only build the spell cache if empty; avoid rescanning every open
+                    if (availableSpells == null || availableSpells.Count == 0)
+                    {
+                        RefreshAvailableSpells();
+                    }
                     UpdateInputFields();
                     LoadCurrentSettings();
-                    UpdateStatusText($"Found {availableSpells.Count - 1} spells");
+                    UpdateStatusText($"Found {Mathf.Max(0, availableSpells.Count - 1)} spells");
                 }
             }
             catch (System.Exception ex)
@@ -482,6 +486,12 @@ namespace ErenshorHealbot
             // Start from all non-empty entries
             IEnumerable<string> spells = availableSpells.Where(s => !string.IsNullOrEmpty(s));
 
+            // If plugin enforces beneficial-only, filter here to present only allowed spells
+            if (plugin != null && plugin.RestrictToBeneficialEnabled)
+            {
+                spells = spells.Where(s => plugin.IsBeneficialSpellName(s));
+            }
+
             bool hasFilter = !string.IsNullOrEmpty(filter);
             if (hasFilter)
             {
@@ -542,7 +552,11 @@ namespace ErenshorHealbot
         {
             if (target == null) return;
             currentPickerTarget = target;
-            RefreshAvailableSpells();
+            // Use cached list; only refresh if empty or not built yet
+            if (availableSpells == null || availableSpells.Count == 0)
+            {
+                RefreshAvailableSpells();
+            }
             if (spellSearchField != null) spellSearchField.text = string.Empty;
             PopulateSpellList("");
             spellPickerPanel.SetActive(true);
@@ -624,7 +638,6 @@ namespace ErenshorHealbot
                             if (!availableSpells.Contains(spell.SpellName))
                             {
                                 availableSpells.Add(spell.SpellName);
-                                Debug.Log($"[SpellConfigUI] Added spell: {spell.SpellName}");
                             }
                         }
                     }
@@ -644,7 +657,6 @@ namespace ErenshorHealbot
                 }
 
                 Debug.Log($"[SpellConfigUI] Total spells found: {availableSpells.Count - 1}");
-                Debug.Log($"[SpellConfigUI] Spell list: {string.Join(", ", availableSpells)}");
             }
             catch (System.Exception ex)
             {

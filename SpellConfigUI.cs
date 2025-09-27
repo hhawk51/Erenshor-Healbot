@@ -91,7 +91,7 @@ namespace ErenshorHealbot
                     }
                     UpdateInputFields();
                     LoadCurrentSettings();
-                    UpdateStatusText($"Found {Mathf.Max(0, availableSpells.Count - 1)} spells");
+                    UpdateStatusText("Ready");
                 }
             }
             catch (System.Exception ex)
@@ -713,7 +713,7 @@ namespace ErenshorHealbot
             Debug.Log("[SpellConfigUI] Manual refresh triggered");
             RefreshAvailableSpells();
             UpdateInputFields();
-            UpdateStatusText($"Refreshed - Found {availableSpells.Count - 1} spells");
+            UpdateStatusText("Spells refreshed");
         }
 
         private void SaveSettings()

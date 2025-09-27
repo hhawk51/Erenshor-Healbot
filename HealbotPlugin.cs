@@ -145,11 +145,7 @@ namespace ErenshorHealbot
 
         private void Update()
         {
-            // Toggle party UI hook
-            if (Input.GetKeyDown(toggleUIKey.Value))
-            {
-                TogglePartyUIHook();
-            }
+            // UI hook stays enabled; disable toggle hotkey
 
             // Opening the configuration window is available via the on-screen HB button or Ctrl+H fallback.
 
@@ -164,6 +160,32 @@ namespace ErenshorHealbot
             {
                 CheckAutoTarget();
             }
+
+            // Detect character switch and invalidate spell cache for UI
+            RefreshSpellCacheOnCharacterSwitch();
+        }
+
+        private string lastPlayerIdentity = null;
+        private void RefreshSpellCacheOnCharacterSwitch()
+        {
+            try
+            {
+                var current = GameData.PlayerStats != null ? (GameData.PlayerStats.MyName ?? "") : "";
+                if (lastPlayerIdentity == null)
+                {
+                    lastPlayerIdentity = current;
+                    return;
+                }
+                if (!string.Equals(lastPlayerIdentity, current))
+                {
+                    lastPlayerIdentity = current;
+                    if (spellConfigUI != null)
+                    {
+                        spellConfigUI.InvalidateSpellCache();
+                    }
+                }
+            }
+            catch { }
         }
 
         private void CheckHealingKeybinds()

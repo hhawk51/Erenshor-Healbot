@@ -302,7 +302,7 @@ namespace ErenshorHealbot
                 var overlayImage = clickOverlay.AddComponent<Image>();
                 if (path.Contains("PlayerLifePar"))
                 {
-                    overlayImage.color = new Color(0, 1, 0, 0.05f); // Subtle green for player
+                    overlayImage.color = new Color(0, 1, 0, 0f); // Fully transparent for player
 
                     // Store references for global click detection
                     playerOverlay = clickOverlay;

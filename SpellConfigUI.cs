@@ -100,6 +100,27 @@ namespace ErenshorHealbot
             }
         }
 
+        // Called by plugin when character switches; rebuilds cache if UI is open
+        public void InvalidateSpellCache()
+        {
+            if (availableSpells != null) availableSpells.Clear();
+            if (isWindowVisible)
+            {
+                try
+                {
+                    RefreshAvailableSpells();
+                    UpdateInputFields();
+                    LoadCurrentSettings();
+                    if (spellPickerPanel != null && spellPickerPanel.activeSelf)
+                    {
+                        var filter = spellSearchField != null ? spellSearchField.text : "";
+                        PopulateSpellList(filter);
+                    }
+                }
+                catch { }
+            }
+        }
+
         private void CreateSpellConfigUI()
         {
             try

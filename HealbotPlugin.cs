@@ -33,6 +33,7 @@ namespace ErenshorHealbot
         private ConfigEntry<bool> debugOverlay;
         private ConfigEntry<bool> enablePartyUIHook;
         private ConfigEntry<bool> restrictToBeneficial;
+        private ConfigEntry<float> defaultGCDSeconds;
         private ConfigEntry<KeyCode> healPlayerKey;
         private ConfigEntry<KeyCode> healMember1Key;
         private ConfigEntry<KeyCode> healMember2Key;
@@ -60,6 +61,7 @@ namespace ErenshorHealbot
             debugOverlay = Config.Bind("Debug", "DebugOverlay", false, "Show a small on-screen debug overlay");
             enablePartyUIHook = Config.Bind("UI", "EnablePartyUIHook", true, "Enable click-to-heal on existing party UI");
             restrictToBeneficial = Config.Bind("Spells", "RestrictToBeneficial", true, "Only allow beneficial spells (heals/buffs) when casting via Healbot");
+            defaultGCDSeconds = Config.Bind("Spells", "DefaultGCDSeconds", 1.5f, "Fallback minimum time between casts when underlying cooldown info is unavailable");
             healPlayerKey = Config.Bind("Keybinds", "HealPlayer", KeyCode.F1, "Key to heal the player");
             healMember1Key = Config.Bind("Keybinds", "HealMember1", KeyCode.F2, "Key to heal party member 1");
             healMember2Key = Config.Bind("Keybinds", "HealMember2", KeyCode.F3, "Key to heal party member 2");
@@ -396,6 +398,17 @@ namespace ErenshorHealbot
                 return;
             }
 
+            // Cooldown checks: prefer engine-provided cooldown, else plugin fallback
+            if (IsSpellOnCooldown(playerCaster, spell, out var remaining))
+            {
+                Logger.LogInfo($"'{spell.SpellName}' is on cooldown ({remaining:0.0}s remaining)");
+                return;
+            }
+            if (IsLocallyThrottled(spell))
+            {
+                return;
+            }
+
             // Set target and cast spell
             if (GameData.PlayerControl != null)
             {
@@ -407,6 +420,9 @@ namespace ErenshorHealbot
             }
 
             playerCaster.StartSpell(spell, target);
+
+            // After attempting to cast, set local cooldown window to avoid back-to-back spam
+            SetLocalCooldown(spell);
         }
 
         private Spell FindSpellByName(string spellName)
@@ -465,6 +481,119 @@ namespace ErenshorHealbot
             var allSeq = allSpells.Where(s =>
                 NormAll(s.SpellName).Contains(wantedAll) || wantedAll.Contains(NormAll(s.SpellName)));
             return restrictToBeneficial.Value ? allSeq.FirstOrDefault(IsBeneficialSpell) : allSeq.FirstOrDefault();
+        }
+
+        // --- Cooldown helpers ---
+        private readonly System.Collections.Generic.Dictionary<string, float> localCooldownUntil = new System.Collections.Generic.Dictionary<string, float>();
+
+        private bool IsSpellOnCooldown(CastSpell caster, Spell spell, out float remainingSeconds)
+        {
+            remainingSeconds = 0f;
+            if (caster == null || spell == null) return false;
+
+            // Try common method names on CastSpell
+            var t = caster.GetType();
+            var methodNames = new[]
+            {
+                "GetCooldownRemaining", "CooldownRemaining", "GetSpellCooldownRemaining", "GetRemainingCooldown", "GetRecastRemaining"
+            };
+            foreach (var name in methodNames)
+            {
+                try
+                {
+                    var mi = t.GetMethod(name, new System.Type[] { typeof(Spell) });
+                    if (mi != null && mi.ReturnType == typeof(float))
+                    {
+                        var val = (float)mi.Invoke(caster, new object[] { spell });
+                        if (val > 0.001f) { remainingSeconds = val; return true; }
+                    }
+                }
+                catch { }
+            }
+
+            // Try property/dictionary patterns on caster
+            try
+            {
+                var pi = t.GetProperty("GlobalCooldownRemaining");
+                if (pi != null && (pi.PropertyType == typeof(float) || pi.PropertyType == typeof(double)))
+                {
+                    var v = System.Convert.ToSingle(pi.GetValue(caster, null));
+                    if (v > 0.001f) { remainingSeconds = v; return true; }
+                }
+            }
+            catch { }
+
+            // Try using spell data for cooldown and track last cast locally
+            if (TryGetSpellCooldownSeconds(spell, out var cd))
+            {
+                if (localCooldownUntil.TryGetValue(spell.SpellName, out var until))
+                {
+                    var now = Time.time;
+                    if (until > now)
+                    {
+                        remainingSeconds = until - now;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryGetSpellCooldownSeconds(Spell spell, out float seconds)
+        {
+            seconds = 0f;
+            if (spell == null) return false;
+            var t = spell.GetType();
+            // Candidate fields/properties that might hold cooldown (seconds)
+            var names = new[] { "Cooldown", "CooldownTime", "Recast", "RecastTime", "ReuseTime", "CoolDown", "CoolDownTime", "CooldownSeconds" };
+            foreach (var n in names)
+            {
+                try
+                {
+                    var pi = t.GetProperty(n);
+                    if (pi != null && (pi.PropertyType == typeof(int) || pi.PropertyType == typeof(float) || pi.PropertyType == typeof(double)))
+                    {
+                        var v = System.Convert.ToSingle(pi.GetValue(spell, null));
+                        if (v > 0.001f) { seconds = NormalizeCooldownValue(n, v); return true; }
+                    }
+                    var fi = t.GetField(n);
+                    if (fi != null && (fi.FieldType == typeof(int) || fi.FieldType == typeof(float) || fi.FieldType == typeof(double)))
+                    {
+                        var v = System.Convert.ToSingle(fi.GetValue(spell));
+                        if (v > 0.001f) { seconds = NormalizeCooldownValue(n, v); return true; }
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        private float NormalizeCooldownValue(string name, float raw)
+        {
+            // Heuristic: if property hints ms or value is large, convert to seconds
+            var lower = name.ToLowerInvariant();
+            if (lower.Contains("ms") || raw > 120f)
+                return raw / 1000f;
+            return raw;
+        }
+
+        private bool IsLocallyThrottled(Spell spell)
+        {
+            if (spell == null) return false;
+            if (localCooldownUntil.TryGetValue(spell.SpellName, out var until))
+            {
+                if (until > Time.time) return true;
+            }
+            return false;
+        }
+
+        private void SetLocalCooldown(Spell spell)
+        {
+            if (spell == null) return;
+            float cd = defaultGCDSeconds.Value;
+            if (TryGetSpellCooldownSeconds(spell, out var s)) cd = Mathf.Max(s, defaultGCDSeconds.Value);
+            localCooldownUntil[spell.SpellName] = Time.time + Mathf.Max(0.05f, cd);
         }
 
         // Heuristic: treat only clearly positive spells as beneficial

@@ -19,6 +19,9 @@ namespace ErenshorHealbot
 
         private Harmony _harmony;
         private PartyUIHook partyUIHook;
+        private SpellConfigUI spellConfigUI;
+        private ChatCommandHandler chatCommandHandler;
+        private InputFieldMonitor inputFieldMonitor;
 
         // Configuration
         private ConfigEntry<KeyCode> toggleUIKey;
@@ -80,6 +83,9 @@ namespace ErenshorHealbot
             {
                 InitializePartyUIHook();
             }
+
+            // Initialize spell configuration UI
+            InitializeSpellConfigUI();
         }
 
         private void InitializePartyUIHook()
@@ -91,6 +97,30 @@ namespace ErenshorHealbot
                 partyUIHook = hookGO.AddComponent<PartyUIHook>();
                 partyUIHook.Initialize(this);
                 Logger.LogInfo("Party UI hook initialized - click-to-heal enabled on existing party UI");
+            }
+        }
+
+        private void InitializeSpellConfigUI()
+        {
+            if (spellConfigUI == null)
+            {
+                var configUIGO = new GameObject("SpellConfigUI");
+                DontDestroyOnLoad(configUIGO);
+                spellConfigUI = configUIGO.AddComponent<SpellConfigUI>();
+                spellConfigUI.Initialize(this);
+
+                // Initialize chat command handler
+                var chatHandlerGO = new GameObject("ChatCommandHandler");
+                DontDestroyOnLoad(chatHandlerGO);
+                chatCommandHandler = chatHandlerGO.AddComponent<ChatCommandHandler>();
+                chatCommandHandler.Initialize(spellConfigUI);
+
+                // Initialize input field monitor as backup
+                var inputMonitorGO = new GameObject("InputFieldMonitor");
+                DontDestroyOnLoad(inputMonitorGO);
+                inputFieldMonitor = inputMonitorGO.AddComponent<InputFieldMonitor>();
+
+                Logger.LogInfo("Spell configuration UI initialized - type '/healbot' in chat to configure spells");
             }
         }
 
@@ -107,6 +137,19 @@ namespace ErenshorHealbot
                 default:
                     return null;
             }
+        }
+
+        public void UpdateSpellBindings(string leftSpell, string rightSpell, string middleSpell)
+        {
+            // Update the configuration entries
+            if (!string.IsNullOrEmpty(leftSpell))
+                leftClickSpell.Value = leftSpell;
+            if (!string.IsNullOrEmpty(rightSpell))
+                rightClickSpell.Value = rightSpell;
+            if (!string.IsNullOrEmpty(middleSpell))
+                middleClickSpell.Value = middleSpell;
+
+            Logger.LogInfo($"Spell bindings updated: Left={leftClickSpell.Value}, Right={rightClickSpell.Value}, Middle={middleClickSpell.Value}");
         }
 
         private void Update()
@@ -448,6 +491,21 @@ namespace ErenshorHealbot
             if (partyUIHook != null)
             {
                 Destroy(partyUIHook.gameObject);
+            }
+
+            if (spellConfigUI != null)
+            {
+                Destroy(spellConfigUI.gameObject);
+            }
+
+            if (chatCommandHandler != null)
+            {
+                Destroy(chatCommandHandler.gameObject);
+            }
+
+            if (inputFieldMonitor != null)
+            {
+                Destroy(inputFieldMonitor.gameObject);
             }
 
             _harmony?.UnpatchSelf();

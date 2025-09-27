@@ -867,15 +867,29 @@ namespace ErenshorHealbot
             if (plugin == null || launcherImage == null) return;
             var path = plugin.GetLauncherIconPath();
 
-            // If no explicit path configured, try default: BepInEx/plugins/healbot/hb.png
+            // If no explicit path configured, try defaults:
+            // 1) hb.png next to the plugin DLL
+            // 2) BepInEx/plugins/healbot/hb.png
             if (string.IsNullOrEmpty(path))
             {
                 try
                 {
-                    var defaultPath = System.IO.Path.Combine(BepInEx.Paths.PluginPath, "healbot", "hb.png");
-                    if (System.IO.File.Exists(defaultPath))
+                    var pluginDir = plugin.GetPluginDirectory();
+                    if (!string.IsNullOrEmpty(pluginDir))
                     {
-                        path = defaultPath;
+                        var sibling = System.IO.Path.Combine(pluginDir, "hb.png");
+                        if (System.IO.File.Exists(sibling))
+                        {
+                            path = sibling;
+                        }
+                    }
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        var defaultPath = System.IO.Path.Combine(BepInEx.Paths.PluginPath, "healbot", "hb.png");
+                        if (System.IO.File.Exists(defaultPath))
+                        {
+                            path = defaultPath;
+                        }
                     }
                 }
                 catch { }

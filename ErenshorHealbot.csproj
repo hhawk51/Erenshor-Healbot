@@ -60,6 +60,7 @@
     </ItemGroup>
     <MakeDir Directories="$(OutDir)healbot" Condition="@(HealbotAssets) != ''" />
     <Copy SourceFiles="@(HealbotAssets)" DestinationFiles="@(HealbotAssets->'$(OutDir)healbot\%(Filename)%(Extension)')" Condition="@(HealbotAssets) != ''" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(OutDir)healbot\$(AssemblyName).dll" />
   </Target>
 
 </Project>

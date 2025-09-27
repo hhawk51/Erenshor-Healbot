@@ -9,6 +9,7 @@ using UnityEngine.EventSystems;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
+using System.IO;
 
 namespace ErenshorHealbot
 {
@@ -146,6 +147,15 @@ namespace ErenshorHealbot
         }
 
         public string GetLauncherIconPath() => launcherIconPath?.Value ?? string.Empty;
+
+        public string GetPluginDirectory()
+        {
+            try
+            {
+                return Path.GetDirectoryName(Info?.Location) ?? string.Empty;
+            }
+            catch { return string.Empty; }
+        }
 
         private void Update()
         {

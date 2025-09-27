@@ -30,11 +30,18 @@ namespace ErenshorHealbot
 
             message = message.Trim().ToLower();
 
+            Debug.Log($"[ChatCommandHandler] Processing message: '{message}'");
+
             if (message == "/healbot" || message == "/healbot config" || message == "/hb")
             {
+                Debug.Log("[ChatCommandHandler] Healbot command detected!");
                 if (Instance?.spellConfigUI != null)
                 {
                     Instance.spellConfigUI.ToggleConfigWindow();
+                }
+                else
+                {
+                    Debug.LogWarning("[ChatCommandHandler] SpellConfigUI is null!");
                 }
             }
         }
@@ -162,6 +169,12 @@ namespace ErenshorHealbot
                 CheckForChatCommand();
             }
 
+            // Also check when typing for immediate feedback
+            if (Input.inputString.Length > 0)
+            {
+                CheckForChatCommandImmediate();
+            }
+
             // Periodically scan for chat input fields
             if (Time.frameCount % 60 == 0) // Every second
             {
@@ -213,7 +226,32 @@ namespace ErenshorHealbot
 
             if (!string.IsNullOrEmpty(message))
             {
+                Debug.Log($"[InputFieldMonitor] Detected chat input: '{message}'");
                 ChatCommandHandler.ProcessChatCommand(message);
+            }
+        }
+
+        private void CheckForChatCommandImmediate()
+        {
+            // Check all input fields for healbot command
+            var allInputFields = FindObjectsOfType<InputField>();
+            foreach (var field in allInputFields)
+            {
+                if (field.isFocused && field.text.ToLower().Contains("/healbot"))
+                {
+                    Debug.Log($"[InputFieldMonitor] Found /healbot in input field: '{field.text}'");
+                    break;
+                }
+            }
+
+            var allTMPInputFields = FindObjectsOfType<TMP_InputField>();
+            foreach (var field in allTMPInputFields)
+            {
+                if (field.isFocused && field.text.ToLower().Contains("/healbot"))
+                {
+                    Debug.Log($"[InputFieldMonitor] Found /healbot in TMP input field: '{field.text}'");
+                    break;
+                }
             }
         }
     }

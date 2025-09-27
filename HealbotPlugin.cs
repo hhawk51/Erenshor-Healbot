@@ -105,18 +105,21 @@ namespace ErenshorHealbot
             if (spellConfigUI == null)
             {
                 var configUIGO = new GameObject("SpellConfigUI");
+                configUIGO.transform.SetParent(null); // Ensure it's a root object
                 DontDestroyOnLoad(configUIGO);
                 spellConfigUI = configUIGO.AddComponent<SpellConfigUI>();
                 spellConfigUI.Initialize(this);
 
                 // Initialize chat command handler
                 var chatHandlerGO = new GameObject("ChatCommandHandler");
+                chatHandlerGO.transform.SetParent(null); // Ensure it's a root object
                 DontDestroyOnLoad(chatHandlerGO);
                 chatCommandHandler = chatHandlerGO.AddComponent<ChatCommandHandler>();
                 chatCommandHandler.Initialize(spellConfigUI);
 
                 // Initialize input field monitor as backup
                 var inputMonitorGO = new GameObject("InputFieldMonitor");
+                inputMonitorGO.transform.SetParent(null); // Ensure it's a root object
                 DontDestroyOnLoad(inputMonitorGO);
                 inputFieldMonitor = inputMonitorGO.AddComponent<InputFieldMonitor>();
 

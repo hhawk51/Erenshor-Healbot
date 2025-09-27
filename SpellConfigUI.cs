@@ -38,6 +38,12 @@ namespace ErenshorHealbot
 
         private void Update()
         {
+            // Fallback keybind to open UI (Ctrl+H)
+            if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.H))
+            {
+                ToggleConfigWindow();
+            }
+
             // Refresh spells periodically in case player learns new ones
             if (Time.frameCount % 300 == 0) // Every 5 seconds at 60fps
             {
@@ -346,7 +352,7 @@ namespace ErenshorHealbot
             instructionsRect.anchoredPosition = new Vector2(0, -120);
 
             var instructionsText = instructionsGO.AddComponent<TextMeshProUGUI>();
-            instructionsText.text = "Configure which spells to cast when clicking on party members.\nType '/healbot' in chat to open this window.";
+            instructionsText.text = "Configure which spells to cast when clicking on party members.\nType '/healbot' in chat or press Ctrl+H to open this window.";
             instructionsText.fontSize = 10;
             instructionsText.color = new Color(0.8f, 0.8f, 0.8f, 1f);
             instructionsText.alignment = TextAlignmentOptions.Center;

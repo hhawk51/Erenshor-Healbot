@@ -823,7 +823,7 @@ namespace ErenshorHealbot
             var go = new GameObject("HealbotLauncherButton");
             go.transform.SetParent(parent, false);
             launcherRect = go.AddComponent<RectTransform>();
-            launcherRect.sizeDelta = new Vector2(36, 36);
+            launcherRect.sizeDelta = new Vector2(72, 72);
             launcherRect.anchorMin = new Vector2(1f, 1f); // top-right
             launcherRect.anchorMax = new Vector2(1f, 1f);
             launcherRect.pivot = new Vector2(1f, 1f);

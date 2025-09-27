@@ -20,11 +20,11 @@ namespace ErenshorHealbot
         private Harmony _harmony;
         private PartyUIHook partyUIHook;
         private SpellConfigUI spellConfigUI;
-        private ChatCommandHandler chatCommandHandler;
-        private InputFieldMonitor inputFieldMonitor;
+        
 
         // Configuration
         private ConfigEntry<KeyCode> toggleUIKey;
+        private ConfigEntry<KeyCode> openConfigKey;
         private ConfigEntry<string> leftClickSpell;
         private ConfigEntry<string> rightClickSpell;
         private ConfigEntry<string> middleClickSpell;
@@ -50,6 +50,7 @@ namespace ErenshorHealbot
 
             // Setup configuration
             toggleUIKey = Config.Bind("Controls", "ToggleUI", KeyCode.H, "Key to toggle healbot UI");
+            openConfigKey = Config.Bind("Controls", "OpenConfig", KeyCode.F10, "Key to open the healbot spell configuration window");
             leftClickSpell = Config.Bind("Spells", "LeftClick", "Minor Healing", "Spell to cast on left click");
             rightClickSpell = Config.Bind("Spells", "RightClick", "Major Healing", "Spell to cast on right click");
             middleClickSpell = Config.Bind("Spells", "MiddleClick", "Group Heal", "Spell to cast on middle click");
@@ -109,21 +110,8 @@ namespace ErenshorHealbot
                 DontDestroyOnLoad(configUIGO);
                 spellConfigUI = configUIGO.AddComponent<SpellConfigUI>();
                 spellConfigUI.Initialize(this);
-
-                // Initialize chat command handler
-                var chatHandlerGO = new GameObject("ChatCommandHandler");
-                chatHandlerGO.transform.SetParent(null); // Ensure it's a root object
-                DontDestroyOnLoad(chatHandlerGO);
-                chatCommandHandler = chatHandlerGO.AddComponent<ChatCommandHandler>();
-                chatCommandHandler.Initialize(spellConfigUI);
-
-                // Initialize input field monitor as backup
-                var inputMonitorGO = new GameObject("InputFieldMonitor");
-                inputMonitorGO.transform.SetParent(null); // Ensure it's a root object
-                DontDestroyOnLoad(inputMonitorGO);
-                inputFieldMonitor = inputMonitorGO.AddComponent<InputFieldMonitor>();
-
-                Logger.LogInfo("Spell configuration UI initialized - type '/healbot' in chat to configure spells");
+                
+                Logger.LogInfo("Spell configuration UI initialized - press the OpenConfig key (default F10) or Ctrl+H to configure spells");
             }
         }
 
@@ -161,6 +149,12 @@ namespace ErenshorHealbot
             if (Input.GetKeyDown(toggleUIKey.Value))
             {
                 TogglePartyUIHook();
+            }
+
+            // Open configuration window
+            if (Input.GetKeyDown(openConfigKey.Value) && spellConfigUI != null)
+            {
+                spellConfigUI.ToggleConfigWindow();
             }
 
             // Manual healing keybinds
@@ -499,16 +493,6 @@ namespace ErenshorHealbot
             if (spellConfigUI != null)
             {
                 Destroy(spellConfigUI.gameObject);
-            }
-
-            if (chatCommandHandler != null)
-            {
-                Destroy(chatCommandHandler.gameObject);
-            }
-
-            if (inputFieldMonitor != null)
-            {
-                Destroy(inputFieldMonitor.gameObject);
             }
 
             _harmony?.UnpatchSelf();

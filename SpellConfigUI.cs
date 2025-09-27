@@ -1,39 +1,51 @@
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro;
+using UnityEngine.EventSystems;
 using System.Collections.Generic;
 using System.Linq;
-using BepInEx.Configuration;
 
 namespace ErenshorHealbot
 {
     public class SpellConfigUI : MonoBehaviour
     {
         private HealbotPlugin plugin;
-        private GameObject configWindow;
+        private Canvas uiCanvas;
+        private GameObject configPanel;
         private bool isWindowVisible = false;
+        private GameObject backdrop;
+        private RectTransform panelRect;
+        private GameObject launcherButton;
+        private RectTransform launcherRect;
+
+        // Spell picker UI
+        private GameObject spellPickerPanel;
+        private InputField spellSearchField;
+        private ScrollRect spellScrollRect;
+        private RectTransform spellListViewport;
+        private RectTransform spellListContent;
+        private InputField currentPickerTarget;
+        private string pendingSearchFilter = string.Empty;
+        private const float SearchDebounceSeconds = 0.08f;
 
         // UI References
-        private TMP_Dropdown leftClickDropdown;
-        private TMP_Dropdown rightClickDropdown;
-        private TMP_Dropdown middleClickDropdown;
+        private InputField leftClickInput;
+        private InputField rightClickInput;
+        private InputField middleClickInput;
         private Button saveButton;
-        private Button cancelButton;
         private Button closeButton;
+        private Button refreshButton;
+        private Text statusText;
 
         // Available spells list
         private List<string> availableSpells = new List<string>();
 
-        // Temporary settings before saving
-        private string tempLeftClickSpell;
-        private string tempRightClickSpell;
-        private string tempMiddleClickSpell;
-
         public void Initialize(HealbotPlugin healbotPlugin)
         {
             plugin = healbotPlugin;
-            RefreshAvailableSpells();
-            CreateConfigUI();
+            Debug.Log("[SpellConfigUI] Initialize called");
+
+            // Create UI immediately but keep it hidden
+            CreateSpellConfigUI();
         }
 
         private void Update()
@@ -44,278 +56,525 @@ namespace ErenshorHealbot
                 ToggleConfigWindow();
             }
 
-            // Refresh spells periodically in case player learns new ones
-            if (Time.frameCount % 300 == 0) // Every 5 seconds at 60fps
+            // Allow closing with Escape when visible
+            if (isWindowVisible && Input.GetKeyDown(KeyCode.Escape))
             {
-                RefreshAvailableSpells();
-                UpdateDropdownOptions();
+                CloseWindow();
             }
         }
 
         public void ToggleConfigWindow()
         {
-            if (configWindow == null)
+            try
             {
-                CreateConfigUI();
+                Debug.Log("[SpellConfigUI] ToggleConfigWindow called");
+
+                if (configPanel == null)
+                {
+                    Debug.Log("[SpellConfigUI] Config panel is null, creating UI");
+                    CreateSpellConfigUI();
+                }
+
+                isWindowVisible = !isWindowVisible;
+                configPanel.SetActive(isWindowVisible);
+                if (backdrop != null) backdrop.SetActive(isWindowVisible);
+                if (launcherButton != null) launcherButton.SetActive(!isWindowVisible);
+
+                Debug.Log($"[SpellConfigUI] Window visibility: {isWindowVisible}");
+
+                if (isWindowVisible)
+                {
+                    RefreshAvailableSpells();
+                    UpdateInputFields();
+                    LoadCurrentSettings();
+                    UpdateStatusText($"Found {availableSpells.Count - 1} spells");
+                }
             }
-
-            isWindowVisible = !isWindowVisible;
-            configWindow.SetActive(isWindowVisible);
-
-            if (isWindowVisible)
+            catch (System.Exception ex)
             {
-                LoadCurrentSettings();
-                RefreshAvailableSpells();
-                UpdateDropdownOptions();
-            }
-        }
-
-        private void RefreshAvailableSpells()
-        {
-            availableSpells.Clear();
-            availableSpells.Add("None"); // Option to disable a click
-
-            var playerCaster = GameData.PlayerControl?.GetComponent<CastSpell>();
-            if (playerCaster?.KnownSpells != null)
-            {
-                var spellNames = playerCaster.KnownSpells
-                    .Where(s => s != null && !string.IsNullOrEmpty(s.SpellName))
-                    .Select(s => s.SpellName)
-                    .OrderBy(name => name)
-                    .ToList();
-
-                availableSpells.AddRange(spellNames);
-            }
-
-            // If no spells found, add some common defaults
-            if (availableSpells.Count <= 1)
-            {
-                availableSpells.AddRange(new[] { "Minor Healing", "Major Healing", "Group Heal", "Heal" });
+                Debug.LogError($"[SpellConfigUI] Error in ToggleConfigWindow: {ex.Message}");
             }
         }
 
-        private void CreateConfigUI()
+        private void CreateSpellConfigUI()
         {
-            // Create main canvas if it doesn't exist
-            Canvas canvas = FindObjectOfType<Canvas>();
-            if (canvas == null)
+            try
             {
+                Debug.Log("[SpellConfigUI] Creating spell config UI");
+
+                if (configPanel != null)
+                {
+                    Debug.Log("[SpellConfigUI] UI already exists");
+                    return;
+                }
+
+                // Ensure an EventSystem exists so inputs are interactable
+                EnsureEventSystem();
+
+                // Create canvas
                 var canvasGO = new GameObject("SpellConfigCanvas");
-                canvas = canvasGO.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 1000; // High order to appear on top
-                canvasGO.AddComponent<CanvasScaler>();
-                canvasGO.AddComponent<GraphicRaycaster>();
                 DontDestroyOnLoad(canvasGO);
+
+                uiCanvas = canvasGO.AddComponent<Canvas>();
+                uiCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                uiCanvas.sortingOrder = 1000;
+
+                var scaler = canvasGO.AddComponent<CanvasScaler>();
+                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+                scaler.referenceResolution = new Vector2(1920, 1080);
+
+                canvasGO.AddComponent<GraphicRaycaster>();
+
+                // Backdrop to dim game UI and block clicks
+                backdrop = new GameObject("Backdrop");
+                backdrop.transform.SetParent(canvasGO.transform, false);
+                var backdropRect = backdrop.AddComponent<RectTransform>();
+                backdropRect.anchorMin = Vector2.zero;
+                backdropRect.anchorMax = Vector2.one;
+                backdropRect.offsetMin = Vector2.zero;
+                backdropRect.offsetMax = Vector2.zero;
+                var backdropImage = backdrop.AddComponent<Image>();
+                backdropImage.color = new Color(0, 0, 0, 0.5f);
+                backdropImage.raycastTarget = true;
+                var backdropButton = backdrop.AddComponent<Button>();
+                backdropButton.transition = Selectable.Transition.None;
+                backdropButton.onClick.AddListener(CloseWindow);
+
+                // Create main panel
+                configPanel = new GameObject("ConfigPanel");
+                configPanel.transform.SetParent(canvasGO.transform, false);
+
+                panelRect = configPanel.AddComponent<RectTransform>();
+                panelRect.sizeDelta = new Vector2(500, 400);
+                panelRect.anchoredPosition = Vector2.zero;
+
+                var panelImage = configPanel.AddComponent<Image>();
+                panelImage.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
+
+                CreateSimpleUI();
+                CreateLauncherButton(canvasGO.transform);
+                CreateSpellPickerUI();
+
+                configPanel.SetActive(false);
+                if (backdrop != null) backdrop.SetActive(false);
+                if (launcherButton != null) launcherButton.SetActive(true);
+                Debug.Log("[SpellConfigUI] UI created successfully");
             }
-
-            // Create main window
-            configWindow = new GameObject("SpellConfigWindow");
-            configWindow.transform.SetParent(canvas.transform, false);
-
-            var windowRect = configWindow.AddComponent<RectTransform>();
-            windowRect.sizeDelta = new Vector2(400, 300);
-            windowRect.anchoredPosition = Vector2.zero;
-
-            // Window background
-            var windowImage = configWindow.AddComponent<Image>();
-            windowImage.color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
-
-            // Window border
-            var outline = configWindow.AddComponent<Outline>();
-            outline.effectColor = Color.white;
-            outline.effectDistance = new Vector2(2, 2);
-
-            CreateWindowContent();
-
-            configWindow.SetActive(false);
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[SpellConfigUI] Error creating UI: {ex.Message}");
+            }
         }
 
-        private void CreateWindowContent()
+        private void CreateSimpleUI()
         {
             // Title
-            var titleGO = new GameObject("Title");
-            titleGO.transform.SetParent(configWindow.transform, false);
-            var titleRect = titleGO.AddComponent<RectTransform>();
-            titleRect.sizeDelta = new Vector2(380, 30);
-            titleRect.anchoredPosition = new Vector2(0, 120);
+            CreateLabel("Spell Configuration", new Vector2(0, 150), 22, FontStyle.Bold);
 
-            var titleText = titleGO.AddComponent<TextMeshProUGUI>();
-            titleText.text = "Spell Configuration";
-            titleText.fontSize = 18;
-            titleText.color = Color.white;
-            titleText.alignment = TextAlignmentOptions.Center;
-            titleText.fontStyle = FontStyles.Bold;
+            // Draggable area (title bar)
+            var dragGO = new GameObject("DragHandle");
+            dragGO.transform.SetParent(configPanel.transform, false);
+            var dragRect = dragGO.AddComponent<RectTransform>();
+            dragRect.sizeDelta = new Vector2(480, 36);
+            dragRect.anchoredPosition = new Vector2(0, 150);
+            var dragImg = dragGO.AddComponent<Image>();
+            dragImg.color = new Color(1, 1, 1, 0.001f); // nearly invisible but raycastable
+            var dragger = dragGO.AddComponent<PanelDragHandler>();
+            dragger.Initialize(panelRect);
 
-            // Left Click Section
-            CreateSpellSelector("Left Click:", new Vector2(0, 70), out leftClickDropdown);
+            // Status text
+            var statusGO = new GameObject("Status");
+            statusGO.transform.SetParent(configPanel.transform, false);
+            var statusRect = statusGO.AddComponent<RectTransform>();
+            statusRect.sizeDelta = new Vector2(450, 30);
+            statusRect.anchoredPosition = new Vector2(0, 110);
+            statusText = statusGO.AddComponent<Text>();
+            statusText.text = "Initializing...";
+            statusText.fontSize = 14;
+            statusText.color = Color.yellow;
+            statusText.alignment = TextAnchor.MiddleCenter;
+            statusText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
-            // Right Click Section
-            CreateSpellSelector("Right Click:", new Vector2(0, 30), out rightClickDropdown);
+            // Spell input fields with pick buttons
+            CreateSpellInput("Left Click Spell:", new Vector2(0, 70), out leftClickInput);
+            CreatePickButton(new Vector2(190, 70), leftClickInput);
 
-            // Middle Click Section
-            CreateSpellSelector("Middle Click:", new Vector2(0, -10), out middleClickDropdown);
+            CreateSpellInput("Right Click Spell:", new Vector2(0, 30), out rightClickInput);
+            CreatePickButton(new Vector2(190, 30), rightClickInput);
+
+            CreateSpellInput("Middle Click Spell:", new Vector2(0, -10), out middleClickInput);
+            CreatePickButton(new Vector2(190, -10), middleClickInput);
 
             // Buttons
-            CreateButtons();
+            refreshButton = CreateButton("Refresh Spells", new Vector2(0, -60), new Color(0.2f, 0.4f, 0.8f, 1f), RefreshSpells);
+            saveButton = CreateButton("Save Settings", new Vector2(-100, -110), new Color(0.2f, 0.8f, 0.2f, 1f), SaveSettings);
+            closeButton = CreateButton("Close", new Vector2(100, -110), new Color(0.8f, 0.2f, 0.2f, 1f), CloseWindow);
 
             // Instructions
-            CreateInstructions();
+            CreateLabel("Use Ctrl+H to open this window\nType spell names for each mouse button", new Vector2(0, -160), 12, FontStyle.Normal);
         }
 
-        private void CreateSpellSelector(string labelText, Vector2 position, out TMP_Dropdown dropdown)
+        private void CreateLabel(string text, Vector2 position, int fontSize, FontStyle fontStyle)
+        {
+            var labelGO = new GameObject("Label");
+            labelGO.transform.SetParent(configPanel.transform, false);
+
+            var labelRect = labelGO.AddComponent<RectTransform>();
+            labelRect.sizeDelta = new Vector2(450, fontSize == 20 ? 30 : 50);
+            labelRect.anchoredPosition = position;
+
+            var label = labelGO.AddComponent<Text>();
+            label.text = text;
+            label.fontSize = fontSize;
+            label.color = Color.white;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.fontStyle = fontStyle;
+            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        }
+
+        private void CreateSpellInput(string labelText, Vector2 position, out InputField inputField)
         {
             // Label
-            var labelGO = new GameObject($"{labelText}Label");
-            labelGO.transform.SetParent(configWindow.transform, false);
+            var labelGO = new GameObject("Label");
+            labelGO.transform.SetParent(configPanel.transform, false);
             var labelRect = labelGO.AddComponent<RectTransform>();
-            labelRect.sizeDelta = new Vector2(120, 25);
-            labelRect.anchoredPosition = new Vector2(-120, position.y);
+            labelRect.sizeDelta = new Vector2(150, 25);
+            labelRect.anchoredPosition = new Vector2(-150, position.y);
 
-            var label = labelGO.AddComponent<TextMeshProUGUI>();
+            var label = labelGO.AddComponent<Text>();
             label.text = labelText;
             label.fontSize = 14;
             label.color = Color.white;
-            label.alignment = TextAlignmentOptions.MidlineLeft;
+            label.alignment = TextAnchor.MiddleLeft;
+            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
-            // Dropdown
-            var dropdownGO = new GameObject($"{labelText}Dropdown");
-            dropdownGO.transform.SetParent(configWindow.transform, false);
-            var dropdownRect = dropdownGO.AddComponent<RectTransform>();
-            dropdownRect.sizeDelta = new Vector2(200, 25);
-            dropdownRect.anchoredPosition = new Vector2(40, position.y);
+            // Input Field
+            var inputGO = new GameObject("InputField");
+            inputGO.transform.SetParent(configPanel.transform, false);
 
-            var dropdownImage = dropdownGO.AddComponent<Image>();
-            dropdownImage.color = new Color(0.2f, 0.2f, 0.2f, 1f);
+            var inputRect = inputGO.AddComponent<RectTransform>();
+            inputRect.sizeDelta = new Vector2(250, 25);
+            inputRect.anchoredPosition = new Vector2(50, position.y);
 
-            dropdown = dropdownGO.AddComponent<TMP_Dropdown>();
+            var inputImage = inputGO.AddComponent<Image>();
+            inputImage.color = new Color(0.2f, 0.2f, 0.2f, 1f);
 
-            // Create dropdown template
-            var template = CreateDropdownTemplate(dropdownGO);
-            dropdown.template = template;
+            inputField = inputGO.AddComponent<InputField>();
 
-            // Dropdown label (selected option display)
-            var labelGO2 = new GameObject("Label");
-            labelGO2.transform.SetParent(dropdownGO.transform, false);
-            var labelRect2 = labelGO2.AddComponent<RectTransform>();
-            labelRect2.sizeDelta = new Vector2(-25, 0);
-            labelRect2.anchoredPosition = new Vector2(-2.5f, 0);
-            labelRect2.anchorMin = Vector2.zero;
-            labelRect2.anchorMax = Vector2.one;
+            // Text area for the input
+            var textAreaGO = new GameObject("Text Area");
+            textAreaGO.transform.SetParent(inputGO.transform, false);
+            var textAreaRect = textAreaGO.AddComponent<RectTransform>();
+            textAreaRect.anchorMin = Vector2.zero;
+            textAreaRect.anchorMax = Vector2.one;
+            textAreaRect.offsetMin = new Vector2(10, 0);
+            textAreaRect.offsetMax = new Vector2(-10, 0);
 
-            var labelText2 = labelGO2.AddComponent<TextMeshProUGUI>();
-            labelText2.fontSize = 12;
-            labelText2.color = Color.white;
-            labelText2.alignment = TextAlignmentOptions.MidlineLeft;
-            dropdown.captionText = labelText2;
+            // Use RectMask2D for proper clipping without requiring a Graphic
+            var rectMask = textAreaGO.AddComponent<RectMask2D>();
 
-            // Arrow
-            var arrowGO = new GameObject("Arrow");
-            arrowGO.transform.SetParent(dropdownGO.transform, false);
-            var arrowRect = arrowGO.AddComponent<RectTransform>();
-            arrowRect.sizeDelta = new Vector2(20, 20);
-            arrowRect.anchoredPosition = new Vector2(-10, 0);
-            arrowRect.anchorMin = new Vector2(1, 0.5f);
-            arrowRect.anchorMax = new Vector2(1, 0.5f);
+            // Input text component
+            var inputTextGO = new GameObject("Text");
+            inputTextGO.transform.SetParent(textAreaGO.transform, false);
+            var inputTextRect = inputTextGO.AddComponent<RectTransform>();
+            inputTextRect.anchorMin = Vector2.zero;
+            inputTextRect.anchorMax = Vector2.one;
+            inputTextRect.sizeDelta = Vector2.zero;
+            inputTextRect.anchoredPosition = Vector2.zero;
 
-            var arrowImage = arrowGO.AddComponent<Image>();
-            arrowImage.color = Color.white;
-            // You might want to load a proper arrow sprite here
+            var inputText = inputTextGO.AddComponent<Text>();
+            inputText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            inputText.fontSize = 14;
+            inputText.color = Color.white;
+            inputText.alignment = TextAnchor.MiddleLeft;
+            inputText.supportRichText = false;
+
+            // Placeholder text
+            var placeholderGO = new GameObject("Placeholder");
+            placeholderGO.transform.SetParent(textAreaGO.transform, false);
+            var placeholderRect = placeholderGO.AddComponent<RectTransform>();
+            placeholderRect.anchorMin = Vector2.zero;
+            placeholderRect.anchorMax = Vector2.one;
+            placeholderRect.sizeDelta = Vector2.zero;
+            placeholderRect.anchoredPosition = Vector2.zero;
+
+            var placeholderText = placeholderGO.AddComponent<Text>();
+            placeholderText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            placeholderText.fontSize = 14;
+            placeholderText.color = new Color(0.7f, 0.7f, 0.7f, 0.7f);
+            placeholderText.alignment = TextAnchor.MiddleLeft;
+            placeholderText.text = "Enter spell name...";
+
+            // Assign text components to input field
+            inputField.textComponent = inputText;
+            inputField.placeholder = placeholderText;
+            inputField.targetGraphic = inputImage;
+
+            Debug.Log($"[SpellConfigUI] Created input field for {labelText}");
         }
 
-        private RectTransform CreateDropdownTemplate(GameObject dropdownParent)
+        private void CreatePickButton(Vector2 position, InputField targetField)
         {
-            var templateGO = new GameObject("Template");
-            templateGO.transform.SetParent(dropdownParent.transform, false);
-            var templateRect = templateGO.AddComponent<RectTransform>();
-            templateRect.sizeDelta = new Vector2(0, 150);
-            templateRect.anchoredPosition = new Vector2(0, -75);
-            templateRect.anchorMin = new Vector2(0, 0);
-            templateRect.anchorMax = new Vector2(1, 0);
+            var buttonGO = new GameObject("PickButton");
+            buttonGO.transform.SetParent(configPanel.transform, false);
 
-            templateGO.SetActive(false);
+            var buttonRect = buttonGO.AddComponent<RectTransform>();
+            buttonRect.sizeDelta = new Vector2(60, 25);
+            buttonRect.anchoredPosition = position;
 
-            var templateImage = templateGO.AddComponent<Image>();
-            templateImage.color = new Color(0.15f, 0.15f, 0.15f, 1f);
+            var image = buttonGO.AddComponent<Image>();
+            image.color = new Color(0.35f, 0.35f, 0.35f, 1f);
 
-            // Viewport
+            var button = buttonGO.AddComponent<Button>();
+            button.targetGraphic = image;
+            button.onClick.AddListener(() => OpenSpellPickerFor(targetField));
+
+            var textGO = new GameObject("Text");
+            textGO.transform.SetParent(buttonGO.transform, false);
+            var textRect = textGO.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+
+            var txt = textGO.AddComponent<Text>();
+            txt.text = "Pick";
+            txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            txt.fontSize = 12;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.color = Color.white;
+        }
+
+        private void CreateSpellPickerUI()
+        {
+            // Panel container
+            spellPickerPanel = new GameObject("SpellPickerPanel");
+            spellPickerPanel.transform.SetParent(configPanel.transform, false);
+            var panel = spellPickerPanel.AddComponent<RectTransform>();
+            panel.sizeDelta = new Vector2(420, 300);
+            panel.anchoredPosition = new Vector2(0, 0);
+            var bg = spellPickerPanel.AddComponent<Image>();
+            bg.color = new Color(0.08f, 0.08f, 0.08f, 0.95f);
+
+            // Title
+            CreateChildLabel(spellPickerPanel.transform, "Pick a Spell", new Vector2(0, 130), 16, FontStyle.Bold);
+
+            // Close button
+            var closeBtn = CreateChildButton(spellPickerPanel.transform, "Close", new Vector2(170, -130), new Vector2(80, 26), new Color(0.6f, 0.2f, 0.2f, 1f), CloseSpellPicker);
+
+            // Search label
+            CreateChildLabel(spellPickerPanel.transform, "Search:", new Vector2(-170, 95), 12, FontStyle.Normal, TextAnchor.MiddleLeft, new Vector2(80, 20));
+
+            // Search input
+            var searchGO = new GameObject("SearchInput");
+            searchGO.transform.SetParent(spellPickerPanel.transform, false);
+            var searchRect = searchGO.AddComponent<RectTransform>();
+            searchRect.sizeDelta = new Vector2(280, 24);
+            searchRect.anchoredPosition = new Vector2(40, 95);
+            var searchImg = searchGO.AddComponent<Image>();
+            searchImg.color = new Color(0.2f, 0.2f, 0.2f, 1f);
+            spellSearchField = searchGO.AddComponent<InputField>();
+
+            var saGO = new GameObject("Text Area");
+            saGO.transform.SetParent(searchGO.transform, false);
+            var saRect = saGO.AddComponent<RectTransform>();
+            saRect.anchorMin = Vector2.zero;
+            saRect.anchorMax = Vector2.one;
+            saRect.offsetMin = new Vector2(8, 0);
+            saRect.offsetMax = new Vector2(-8, 0);
+            saGO.AddComponent<RectMask2D>();
+
+            var sTextGO = new GameObject("Text");
+            sTextGO.transform.SetParent(saGO.transform, false);
+            var sTextRect = sTextGO.AddComponent<RectTransform>();
+            sTextRect.anchorMin = Vector2.zero;
+            sTextRect.anchorMax = Vector2.one;
+            sTextRect.sizeDelta = Vector2.zero;
+            var sText = sTextGO.AddComponent<Text>();
+            sText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            sText.fontSize = 12;
+            sText.color = Color.white;
+            sText.alignment = TextAnchor.MiddleLeft;
+
+            var sPhGO = new GameObject("Placeholder");
+            sPhGO.transform.SetParent(saGO.transform, false);
+            var sPhRect = sPhGO.AddComponent<RectTransform>();
+            sPhRect.anchorMin = Vector2.zero;
+            sPhRect.anchorMax = Vector2.one;
+            sPhRect.sizeDelta = Vector2.zero;
+            var sPh = sPhGO.AddComponent<Text>();
+            sPh.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            sPh.fontSize = 12;
+            sPh.color = new Color(0.7f, 0.7f, 0.7f, 0.7f);
+            sPh.alignment = TextAnchor.MiddleLeft;
+            sPh.text = "Type to filter...";
+            spellSearchField.textComponent = sText;
+            spellSearchField.placeholder = sPh;
+            spellSearchField.targetGraphic = searchImg;
+
+            // Scroll area
+            var scrollGO = new GameObject("SpellScroll");
+            scrollGO.transform.SetParent(spellPickerPanel.transform, false);
+            var scrollRect = scrollGO.AddComponent<RectTransform>();
+            scrollRect.sizeDelta = new Vector2(380, 220);
+            scrollRect.anchoredPosition = new Vector2(0, -10);
+            spellScrollRect = scrollGO.AddComponent<ScrollRect>();
+            spellScrollRect.horizontal = false;
+            spellScrollRect.vertical = true;
+            spellScrollRect.movementType = ScrollRect.MovementType.Clamped;
+            spellScrollRect.inertia = true;
+            spellScrollRect.decelerationRate = 0.05f; // snappy stop
+            spellScrollRect.scrollSensitivity = 80f; // faster mouse wheel
+            var scrollImg = scrollGO.AddComponent<Image>();
+            scrollImg.color = new Color(0.12f, 0.12f, 0.12f, 1f);
+
             var viewportGO = new GameObject("Viewport");
-            viewportGO.transform.SetParent(templateGO.transform, false);
-            var viewportRect = viewportGO.AddComponent<RectTransform>();
-            viewportRect.sizeDelta = Vector2.zero;
-            viewportRect.anchorMin = Vector2.zero;
-            viewportRect.anchorMax = Vector2.one;
+            viewportGO.transform.SetParent(scrollGO.transform, false);
+            spellListViewport = viewportGO.AddComponent<RectTransform>();
+            spellListViewport.anchorMin = new Vector2(0, 0);
+            spellListViewport.anchorMax = new Vector2(1, 1);
+            spellListViewport.offsetMin = new Vector2(0, 0);
+            spellListViewport.offsetMax = new Vector2(0, 0);
+            viewportGO.AddComponent<RectMask2D>();
 
-            var viewportMask = viewportGO.AddComponent<Mask>();
-            var viewportImage = viewportGO.AddComponent<Image>();
-            viewportImage.color = Color.clear;
-
-            // Content
             var contentGO = new GameObject("Content");
             contentGO.transform.SetParent(viewportGO.transform, false);
-            var contentRect = contentGO.AddComponent<RectTransform>();
-            contentRect.sizeDelta = new Vector2(0, 150);
-            contentRect.anchorMin = new Vector2(0, 1);
-            contentRect.anchorMax = new Vector2(1, 1);
-            contentRect.anchoredPosition = new Vector2(0, 0);
+            spellListContent = contentGO.AddComponent<RectTransform>();
+            spellListContent.anchorMin = new Vector2(0, 1);
+            spellListContent.anchorMax = new Vector2(1, 1);
+            spellListContent.pivot = new Vector2(0.5f, 1f);
+            spellListContent.offsetMin = new Vector2(0, 0);
+            spellListContent.offsetMax = new Vector2(0, 0);
+            var layout = contentGO.AddComponent<VerticalLayoutGroup>();
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.spacing = 4f;
+            layout.padding = new RectOffset(6, 6, 6, 6);
+            var fitter = contentGO.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            // Item
-            var itemGO = new GameObject("Item");
-            itemGO.transform.SetParent(contentGO.transform, false);
-            var itemRect = itemGO.AddComponent<RectTransform>();
-            itemRect.sizeDelta = new Vector2(0, 20);
-            itemRect.anchorMin = new Vector2(0, 0.5f);
-            itemRect.anchorMax = new Vector2(1, 0.5f);
+            spellScrollRect.viewport = spellListViewport;
+            spellScrollRect.content = spellListContent;
 
-            var itemToggle = itemGO.AddComponent<Toggle>();
-            var itemImage = itemGO.AddComponent<Image>();
-            itemImage.color = new Color(0.2f, 0.2f, 0.2f, 1f);
-
-            // Item Label
-            var itemLabelGO = new GameObject("Item Label");
-            itemLabelGO.transform.SetParent(itemGO.transform, false);
-            var itemLabelRect = itemLabelGO.AddComponent<RectTransform>();
-            itemLabelRect.sizeDelta = Vector2.zero;
-            itemLabelRect.anchorMin = Vector2.zero;
-            itemLabelRect.anchorMax = Vector2.one;
-
-            var itemLabelText = itemLabelGO.AddComponent<TextMeshProUGUI>();
-            itemLabelText.fontSize = 12;
-            itemLabelText.color = Color.white;
-            itemLabelText.alignment = TextAlignmentOptions.MidlineLeft;
-            itemLabelText.margin = new Vector4(10, 0, 10, 0);
-
-            itemToggle.targetGraphic = itemImage;
-            itemToggle.graphic = null;
-
-            // ScrollRect for template
-            var scrollRect = templateGO.AddComponent<ScrollRect>();
-            scrollRect.content = contentRect;
-            scrollRect.viewport = viewportRect;
-            scrollRect.vertical = true;
-            scrollRect.horizontal = false;
-
-            return templateRect;
+            spellPickerPanel.SetActive(false);
+            spellSearchField.onValueChanged.AddListener(OnSearchChanged);
         }
 
-        private void CreateButtons()
+        private void OnSearchChanged(string value)
         {
-            // Save Button
-            saveButton = CreateButton("Save", new Vector2(-60, -70), new Color(0.2f, 0.6f, 0.2f, 1f), SaveSettings);
+            pendingSearchFilter = value ?? string.Empty;
+            CancelInvoke(nameof(ApplySearchFilter));
+            Invoke(nameof(ApplySearchFilter), SearchDebounceSeconds);
+        }
 
-            // Cancel Button
-            cancelButton = CreateButton("Cancel", new Vector2(0, -70), new Color(0.6f, 0.6f, 0.2f, 1f), CancelSettings);
+        private void ApplySearchFilter()
+        {
+            PopulateSpellList(pendingSearchFilter);
+        }
 
-            // Close Button
-            closeButton = CreateButton("Close", new Vector2(60, -70), new Color(0.6f, 0.2f, 0.2f, 1f), CloseWindow);
+        private void PopulateSpellList(string filter)
+        {
+            foreach (Transform child in spellListContent)
+            {
+                Destroy(child.gameObject);
+            }
+
+            // Start from all non-empty entries
+            IEnumerable<string> spells = availableSpells.Where(s => !string.IsNullOrEmpty(s));
+
+            bool hasFilter = !string.IsNullOrEmpty(filter);
+            if (hasFilter)
+            {
+                var f = filter.Trim().ToLowerInvariant();
+                spells = spells.Where(s => s.ToLowerInvariant().Contains(f));
+                // Sort filtered results A-Z (case-insensitive)
+                spells = spells.OrderBy(s => s, System.StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                // When no filter, keep "None" at the top if present, then A-Z for the rest
+                var noneFirst = spells.Any(s => s.Equals("None", System.StringComparison.OrdinalIgnoreCase));
+                var sorted = spells
+                    .Where(s => !s.Equals("None", System.StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(s => s, System.StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (noneFirst)
+                {
+                    // Prepend "None"
+                    sorted.Insert(0, availableSpells.First(s => s.Equals("None", System.StringComparison.OrdinalIgnoreCase)));
+                }
+                spells = sorted;
+            }
+
+            foreach (var spell in spells)
+            {
+                var rowGO = new GameObject("SpellRow");
+                rowGO.transform.SetParent(spellListContent, false);
+                var rowRect = rowGO.AddComponent<RectTransform>();
+                rowRect.sizeDelta = new Vector2(0, 28);
+                var layoutEl = rowGO.AddComponent<LayoutElement>();
+                layoutEl.minHeight = 28f;
+                layoutEl.preferredHeight = 28f;
+                layoutEl.flexibleWidth = 1f;
+                var img = rowGO.AddComponent<Image>();
+                img.color = new Color(0.22f, 0.22f, 0.22f, 1f);
+                var btn = rowGO.AddComponent<Button>();
+                btn.targetGraphic = img;
+                string captured = spell;
+                btn.onClick.AddListener(() => OnPickSpell(captured));
+
+                var textGO = new GameObject("Text");
+                textGO.transform.SetParent(rowGO.transform, false);
+                var tRect = textGO.AddComponent<RectTransform>();
+                tRect.anchorMin = Vector2.zero; tRect.anchorMax = Vector2.one;
+                tRect.offsetMin = new Vector2(8, 0); tRect.offsetMax = new Vector2(-8, 0);
+                var t = textGO.AddComponent<Text>();
+                t.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                t.fontSize = 12;
+                t.color = Color.white;
+                t.alignment = TextAnchor.MiddleLeft;
+                t.text = string.IsNullOrEmpty(spell) ? "(Empty)" : spell;
+            }
+        }
+
+        private void OpenSpellPickerFor(InputField target)
+        {
+            if (target == null) return;
+            currentPickerTarget = target;
+            RefreshAvailableSpells();
+            if (spellSearchField != null) spellSearchField.text = string.Empty;
+            PopulateSpellList("");
+            spellPickerPanel.SetActive(true);
+            spellPickerPanel.transform.SetAsLastSibling();
+            if (spellScrollRect != null) spellScrollRect.verticalNormalizedPosition = 1f; // start at top
+        }
+
+        private void OnPickSpell(string spell)
+        {
+            if (currentPickerTarget != null)
+            {
+                currentPickerTarget.text = spell == "None" ? string.Empty : spell;
+            }
+            CloseSpellPicker();
+        }
+
+        private void CloseSpellPicker()
+        {
+            if (spellPickerPanel != null)
+            {
+                spellPickerPanel.SetActive(false);
+            }
+            currentPickerTarget = null;
         }
 
         private Button CreateButton(string text, Vector2 position, Color color, UnityEngine.Events.UnityAction onClick)
         {
-            var buttonGO = new GameObject($"{text}Button");
-            buttonGO.transform.SetParent(configWindow.transform, false);
+            var buttonGO = new GameObject("Button");
+            buttonGO.transform.SetParent(configPanel.transform, false);
+
             var buttonRect = buttonGO.AddComponent<RectTransform>();
-            buttonRect.sizeDelta = new Vector2(80, 30);
+            buttonRect.sizeDelta = new Vector2(120, 30);
             buttonRect.anchoredPosition = position;
 
             var buttonImage = buttonGO.AddComponent<Image>();
@@ -325,141 +584,338 @@ namespace ErenshorHealbot
             button.targetGraphic = buttonImage;
             button.onClick.AddListener(onClick);
 
-            // Button Text
+            // Button text
             var textGO = new GameObject("Text");
             textGO.transform.SetParent(buttonGO.transform, false);
             var textRect = textGO.AddComponent<RectTransform>();
-            textRect.sizeDelta = Vector2.zero;
             textRect.anchorMin = Vector2.zero;
             textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
 
-            var buttonText = textGO.AddComponent<TextMeshProUGUI>();
+            var buttonText = textGO.AddComponent<Text>();
             buttonText.text = text;
             buttonText.fontSize = 12;
             buttonText.color = Color.white;
-            buttonText.alignment = TextAlignmentOptions.Center;
-            buttonText.fontStyle = FontStyles.Bold;
+            buttonText.alignment = TextAnchor.MiddleCenter;
+            buttonText.fontStyle = FontStyle.Bold;
+            buttonText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
+            Debug.Log($"[SpellConfigUI] Created button: {text}");
             return button;
         }
 
-        private void CreateInstructions()
+        private void RefreshAvailableSpells()
         {
-            var instructionsGO = new GameObject("Instructions");
-            instructionsGO.transform.SetParent(configWindow.transform, false);
-            var instructionsRect = instructionsGO.AddComponent<RectTransform>();
-            instructionsRect.sizeDelta = new Vector2(380, 40);
-            instructionsRect.anchoredPosition = new Vector2(0, -120);
+            Debug.Log("[SpellConfigUI] Refreshing available spells");
+            availableSpells.Clear();
+            availableSpells.Add("None");
 
-            var instructionsText = instructionsGO.AddComponent<TextMeshProUGUI>();
-            instructionsText.text = "Configure which spells to cast when clicking on party members.\nType '/healbot' in chat or press Ctrl+H to open this window.";
-            instructionsText.fontSize = 10;
-            instructionsText.color = new Color(0.8f, 0.8f, 0.8f, 1f);
-            instructionsText.alignment = TextAlignmentOptions.Center;
+            try
+            {
+                // Method 1: From player's known spells (THIS WAS WORKING!)
+                var playerCaster = GameData.PlayerControl?.GetComponent<CastSpell>();
+                if (playerCaster?.KnownSpells != null)
+                {
+                    foreach (var spell in playerCaster.KnownSpells)
+                    {
+                        if (spell != null && !string.IsNullOrEmpty(spell.SpellName))
+                        {
+                            if (!availableSpells.Contains(spell.SpellName))
+                            {
+                                availableSpells.Add(spell.SpellName);
+                                Debug.Log($"[SpellConfigUI] Added spell: {spell.SpellName}");
+                            }
+                        }
+                    }
+                }
+
+                // Method 2: From all spell resources (THIS WAS ALSO WORKING!)
+                var allSpells = Resources.FindObjectsOfTypeAll<Spell>();
+                foreach (var spell in allSpells)
+                {
+                    if (spell != null && !string.IsNullOrEmpty(spell.SpellName))
+                    {
+                        if (!availableSpells.Contains(spell.SpellName))
+                        {
+                            availableSpells.Add(spell.SpellName);
+                        }
+                    }
+                }
+
+                Debug.Log($"[SpellConfigUI] Total spells found: {availableSpells.Count - 1}");
+                Debug.Log($"[SpellConfigUI] Spell list: {string.Join(", ", availableSpells)}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[SpellConfigUI] Error refreshing spells: {ex.Message}");
+            }
+
+            // Ensure we have at least some options
+            if (availableSpells.Count <= 1)
+            {
+                availableSpells.AddRange(new[] { "Minor Healing", "Major Healing", "Group Heal" });
+                Debug.Log("[SpellConfigUI] Added fallback spells");
+            }
         }
 
-        private void UpdateDropdownOptions()
+        private void UpdateInputFields()
         {
-            if (leftClickDropdown != null)
-            {
-                leftClickDropdown.options.Clear();
-                foreach (var spell in availableSpells)
-                {
-                    leftClickDropdown.options.Add(new TMP_Dropdown.OptionData(spell));
-                }
-                leftClickDropdown.RefreshShownValue();
-            }
-
-            if (rightClickDropdown != null)
-            {
-                rightClickDropdown.options.Clear();
-                foreach (var spell in availableSpells)
-                {
-                    rightClickDropdown.options.Add(new TMP_Dropdown.OptionData(spell));
-                }
-                rightClickDropdown.RefreshShownValue();
-            }
-
-            if (middleClickDropdown != null)
-            {
-                middleClickDropdown.options.Clear();
-                foreach (var spell in availableSpells)
-                {
-                    middleClickDropdown.options.Add(new TMP_Dropdown.OptionData(spell));
-                }
-                middleClickDropdown.RefreshShownValue();
-            }
+            Debug.Log("[SpellConfigUI] Input fields are ready for text input");
+            // Input fields don't need option updates like dropdowns
+            // Users can type spell names directly
         }
 
         private void LoadCurrentSettings()
         {
             if (plugin == null) return;
 
-            // Get current spell settings from plugin
-            tempLeftClickSpell = plugin.GetSpellForButton(UnityEngine.EventSystems.PointerEventData.InputButton.Left);
-            tempRightClickSpell = plugin.GetSpellForButton(UnityEngine.EventSystems.PointerEventData.InputButton.Right);
-            tempMiddleClickSpell = plugin.GetSpellForButton(UnityEngine.EventSystems.PointerEventData.InputButton.Middle);
+            try
+            {
+                var leftSpell = plugin.GetSpellForButton(UnityEngine.EventSystems.PointerEventData.InputButton.Left);
+                var rightSpell = plugin.GetSpellForButton(UnityEngine.EventSystems.PointerEventData.InputButton.Right);
+                var middleSpell = plugin.GetSpellForButton(UnityEngine.EventSystems.PointerEventData.InputButton.Middle);
 
-            // Set dropdown values
-            SetDropdownValue(leftClickDropdown, tempLeftClickSpell);
-            SetDropdownValue(rightClickDropdown, tempRightClickSpell);
-            SetDropdownValue(middleClickDropdown, tempMiddleClickSpell);
+                SetInputFieldValue(leftClickInput, leftSpell);
+                SetInputFieldValue(rightClickInput, rightSpell);
+                SetInputFieldValue(middleClickInput, middleSpell);
+
+                Debug.Log($"[SpellConfigUI] Loaded settings: L={leftSpell}, R={rightSpell}, M={middleSpell}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[SpellConfigUI] Error loading settings: {ex.Message}");
+            }
         }
 
-        private void SetDropdownValue(TMP_Dropdown dropdown, string value)
+        private void SetInputFieldValue(InputField inputField, string value)
         {
-            if (dropdown == null || string.IsNullOrEmpty(value)) return;
+            if (inputField == null) return;
 
-            for (int i = 0; i < dropdown.options.Count; i++)
-            {
-                if (dropdown.options[i].text.Equals(value, System.StringComparison.OrdinalIgnoreCase))
-                {
-                    dropdown.value = i;
-                    break;
-                }
-            }
+            inputField.text = string.IsNullOrEmpty(value) ? "" : value;
+            Debug.Log($"[SpellConfigUI] Set input field to '{value}'");
+        }
+
+        private void RefreshSpells()
+        {
+            Debug.Log("[SpellConfigUI] Manual refresh triggered");
+            RefreshAvailableSpells();
+            UpdateInputFields();
+            UpdateStatusText($"Refreshed - Found {availableSpells.Count - 1} spells");
         }
 
         private void SaveSettings()
         {
-            if (plugin == null) return;
+            try
+            {
+                string leftSpell = leftClickInput != null ? leftClickInput.text.Trim() : "";
+                string rightSpell = rightClickInput != null ? rightClickInput.text.Trim() : "";
+                string middleSpell = middleClickInput != null ? middleClickInput.text.Trim() : "";
 
-            // Get selected values
-            string newLeftSpell = leftClickDropdown.value < availableSpells.Count ? availableSpells[leftClickDropdown.value] : "None";
-            string newRightSpell = rightClickDropdown.value < availableSpells.Count ? availableSpells[rightClickDropdown.value] : "None";
-            string newMiddleSpell = middleClickDropdown.value < availableSpells.Count ? availableSpells[middleClickDropdown.value] : "None";
+                // Validate spell names against available spells
+                leftSpell = ValidateSpellName(leftSpell);
+                rightSpell = ValidateSpellName(rightSpell);
+                middleSpell = ValidateSpellName(middleSpell);
 
-            // Convert "None" to empty string for config
-            if (newLeftSpell == "None") newLeftSpell = "";
-            if (newRightSpell == "None") newRightSpell = "";
-            if (newMiddleSpell == "None") newMiddleSpell = "";
+                plugin.UpdateSpellBindings(leftSpell, rightSpell, middleSpell);
+                UpdateStatusText("Settings saved successfully!");
 
-            // Save to plugin configuration
-            plugin.UpdateSpellBindings(newLeftSpell, newRightSpell, newMiddleSpell);
-
-            CloseWindow();
+                Debug.Log($"[SpellConfigUI] Saved: L={leftSpell}, R={rightSpell}, M={middleSpell}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[SpellConfigUI] Error saving: {ex.Message}");
+                UpdateStatusText("Error saving settings!");
+            }
         }
 
-        private void CancelSettings()
+        private string ValidateSpellName(string spellName)
         {
-            // Reload current settings to discard changes
-            LoadCurrentSettings();
+            if (string.IsNullOrEmpty(spellName))
+                return "";
+
+            // Check if the spell exists in our available spells list (case-insensitive)
+            foreach (var spell in availableSpells)
+            {
+                if (spell.Equals(spellName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return spell; // Return the correctly cased version
+                }
+            }
+
+            Debug.LogWarning($"[SpellConfigUI] Spell '{spellName}' not found in available spells");
+            return spellName; // Return as-is if not found, let the game handle it
         }
 
         private void CloseWindow()
         {
             isWindowVisible = false;
-            if (configWindow != null)
+            if (configPanel != null)
             {
-                configWindow.SetActive(false);
+                configPanel.SetActive(false);
+            }
+            if (backdrop != null)
+            {
+                backdrop.SetActive(false);
+            }
+            if (launcherButton != null)
+            {
+                launcherButton.SetActive(true);
+            }
+            CloseSpellPicker();
+        }
+
+        private void UpdateStatusText(string message)
+        {
+            if (statusText != null)
+            {
+                statusText.text = message;
+                statusText.color = message.Contains("Error") ? Color.red :
+                                 message.Contains("success") ? Color.green : Color.yellow;
             }
         }
 
         private void OnDestroy()
         {
-            if (configWindow != null)
+            if (uiCanvas != null)
             {
-                Destroy(configWindow);
+                Destroy(uiCanvas.gameObject);
+            }
+        }
+
+        private void CreateLauncherButton(Transform parent)
+        {
+            var go = new GameObject("HealbotLauncherButton");
+            go.transform.SetParent(parent, false);
+            launcherRect = go.AddComponent<RectTransform>();
+            launcherRect.sizeDelta = new Vector2(36, 36);
+            launcherRect.anchorMin = new Vector2(1f, 1f); // top-right
+            launcherRect.anchorMax = new Vector2(1f, 1f);
+            launcherRect.pivot = new Vector2(1f, 1f);
+            launcherRect.anchoredPosition = new Vector2(-20f, -20f);
+
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
+            img.raycastTarget = true;
+
+            var btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(() =>
+            {
+                ToggleConfigWindow();
+            });
+
+            var textGO = new GameObject("Text");
+            textGO.transform.SetParent(go.transform, false);
+            var tRect = textGO.AddComponent<RectTransform>();
+            tRect.anchorMin = Vector2.zero; tRect.anchorMax = Vector2.one;
+            tRect.offsetMin = Vector2.zero; tRect.offsetMax = Vector2.zero;
+            var txt = textGO.AddComponent<Text>();
+            txt.text = "HB";
+            txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            txt.fontSize = 14;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.color = Color.white;
+
+            var drag = go.AddComponent<PanelDragHandler>();
+            drag.Initialize(launcherRect);
+
+            launcherButton = go;
+            launcherButton.transform.SetAsLastSibling();
+        }
+
+        // Helpers for child UI elements on the picker
+        private void CreateChildLabel(Transform parent, string text, Vector2 position, int fontSize, FontStyle fontStyle, TextAnchor anchor = TextAnchor.MiddleCenter, Vector2? size = null)
+        {
+            var go = new GameObject("Label");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.sizeDelta = size ?? new Vector2(380, fontSize == 16 ? 24 : 18);
+            rect.anchoredPosition = position;
+            var lbl = go.AddComponent<Text>();
+            lbl.text = text;
+            lbl.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            lbl.fontSize = fontSize;
+            lbl.fontStyle = fontStyle;
+            lbl.color = Color.white;
+            lbl.alignment = anchor;
+        }
+
+        private Button CreateChildButton(Transform parent, string text, Vector2 position, Vector2 size, Color color, UnityEngine.Events.UnityAction onClick)
+        {
+            var go = new GameObject("Button");
+            go.transform.SetParent(parent, false);
+            var rect = go.AddComponent<RectTransform>();
+            rect.sizeDelta = size;
+            rect.anchoredPosition = position;
+            var img = go.AddComponent<Image>();
+            img.color = color;
+            var btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(onClick);
+
+            var textGO = new GameObject("Text");
+            textGO.transform.SetParent(go.transform, false);
+            var tRect = textGO.AddComponent<RectTransform>();
+            tRect.anchorMin = Vector2.zero; tRect.anchorMax = Vector2.one;
+            tRect.offsetMin = Vector2.zero; tRect.offsetMax = Vector2.zero;
+            var t = textGO.AddComponent<Text>();
+            t.text = text;
+            t.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            t.fontSize = 12;
+            t.alignment = TextAnchor.MiddleCenter;
+            t.color = Color.white;
+
+            return btn;
+        }
+
+        private void EnsureEventSystem()
+        {
+            var es = FindObjectOfType<EventSystem>();
+            if (es == null)
+            {
+                var esGO = new GameObject("HealbotEventSystem");
+                es = esGO.AddComponent<EventSystem>();
+                esGO.AddComponent<StandaloneInputModule>();
+                // Persist to ensure UI remains usable even if scenes change or game lacks one
+                DontDestroyOnLoad(esGO);
+            }
+        }
+
+        // Simple panel drag handler
+        private class PanelDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler
+        {
+            private RectTransform target;
+            private Vector2 startPointerLocalPos;
+            private Vector2 startAnchoredPos;
+
+            public void Initialize(RectTransform targetRect)
+            {
+                target = targetRect;
+            }
+
+            public void OnBeginDrag(PointerEventData eventData)
+            {
+                if (target == null) return;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    target.parent as RectTransform,
+                    eventData.position,
+                    null,
+                    out startPointerLocalPos);
+                startAnchoredPos = target.anchoredPosition;
+            }
+
+            public void OnDrag(PointerEventData eventData)
+            {
+                if (target == null) return;
+                Vector2 currentPointerLocalPos;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    target.parent as RectTransform,
+                    eventData.position,
+                    null,
+                    out currentPointerLocalPos);
+                var offset = currentPointerLocalPos - startPointerLocalPos;
+                target.anchoredPosition = startAnchoredPos + offset;
             }
         }
     }

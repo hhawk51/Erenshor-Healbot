@@ -396,6 +396,7 @@ namespace ErenshorHealbot
                             Destroy(comp);
                         }
                     }
+                    // keep existing overlays
                 }
             }
             catch

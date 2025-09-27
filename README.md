@@ -1,99 +1,88 @@
 # Erenshor Healbot
 
-A BepInEx plugin for automatic healing in Erenshor that provides intelligent party member monitoring and healing automation.
+A BepInEx plugin that adds click‑to‑heal, a simple spell config UI, and helpful automation for healing your party in Erenshor.
 
-## Features
+## Highlights
 
-- **Automatic Healing**: Monitors party members' health and automatically casts healing spells when needed
-- **Configurable Thresholds**: Set custom health percentage thresholds for healing triggers
-- **Party UI Integration**: Seamlessly integrates with the game's party interface
-- **Smart Targeting**: Prioritizes healing based on party member health status
-- **Cooldown Management**: Respects spell cooldowns and mana costs
+- Click names/HP bars in the party UI to heal that target.
+- Draggable “HB” button in the top‑right to open the config; also supports `F10` and `Ctrl+H`.
+- Spell picker with search, A–Z sorting, and cached results for fast open.
+- Beneficial‑only protection (default): blocks damage spells from being cast via Healbot.
+- Cooldown awareness: respects engine cooldowns when available and applies a fallback GCD.
+- Optional debug overlay to see detected party and current settings.
 
 ## Requirements
 
-- **Erenshor** (Steam version)
-- **BepInEx 5.x** installed and configured
-- **.NET Framework** compatible with netstandard2.1
+- Erenshor (Steam)
+- BepInEx 5.x
+- .NET SDK to build from source (netstandard2.1)
 
-## Installation
+## Install
 
-### Step 1: Install BepInEx
+1) Install BepInEx (5.x) to your Erenshor directory (same folder as `Erenshor.exe`). Run once to generate folders.
 
-1. Download BepInEx 5.x from [BepInEx releases](https://github.com/BepInEx/BepInEx/releases)
-2. Extract BepInEx to your Erenshor game directory (where `Erenshor.exe` is located)
-3. Run the game once to generate BepInEx folders
-4. Close the game
+2) Download the latest DLL from Releases and copy to:
 
-### Step 2: Install Erenshor Healbot
+   `[Erenshor]/BepInEx/plugins/Hawtin.Erenshor.Healbot.dll`
 
-1. Download the latest release from the [Releases page](https://github.com/hhawk51/Erenshor-Healbot/releases)
-2. Extract `Hawtin.Erenshor.Healbot.1.0.dll` to your BepInEx plugins folder:
-   ```
-   [Erenshor Game Directory]/BepInEx/plugins/
-   ```
+3) Launch the game. You should see Healbot messages in the BepInEx console.
 
-### Step 3: Launch the Game
+## Use
 
-1. Start Erenshor
-2. The plugin will automatically load and begin monitoring party members
-3. Check the BepInEx console for any loading messages
+- Click party UI entries to cast the configured spell for that mouse button.
+- Open config:
+  - Click the draggable “HB” button (top‑right), or
+  - Press `F10` (configurable), or `Ctrl+H`.
+- In the config window:
+  - Assign spells for Left/Right/Middle click.
+  - Use “Pick” to open the searchable spell list (A–Z).
+  - Press “Refresh Spells” to rebuild the list (cache is used otherwise).
 
-## Usage
+## Keybinds (defaults)
 
-Once installed, the Healbot will automatically:
+- `F10` – Open/close config window
+- `Ctrl+H` – Open/close config window
+- `H` – Toggle party click‑to‑heal hook
+- `F1/F2/F3/F4` – Heal player/member 1/2/3 (see config)
 
-- Monitor all party members' health levels
-- Cast healing spells when a party member's health drops below the configured threshold
-- Manage spell cooldowns and mana consumption
-- Integrate with the existing party UI for seamless operation
+## Config (BepInEx)
 
-## Configuration
+- `Controls.OpenConfig` (KeyCode) – Open config window (default: F10)
+- `Controls.ToggleUI` (KeyCode) – Toggle party UI hook (default: H)
+- `UI.EnablePartyUIHook` (bool) – Enable click‑to‑heal on party UI (default: true)
+- `Spells.LeftClick|RightClick|MiddleClick` (string) – Spells bound to mouse buttons
+- `Spells.RestrictToBeneficial` (bool) – Only allow beneficial spells (default: true)
+- `Spells.DefaultGCDSeconds` (float) – Fallback minimum time between casts (default: 1.5)
+- `Keybinds.HealPlayer|HealMember1|HealMember2|HealMember3` – Manual heal keys
+- `KeybindSpells.HealPlayerSpell|…` – Spells cast by those hotkeys
+- `Debug.DebugOverlay` (bool) – Show overlay with detected party and info
 
-The plugin uses default settings that work well for most situations. Configuration options may be added in future versions.
+## Notes on protection & cooldowns
 
-## Compatibility
+- Beneficial‑only mode uses conservative name heuristics (heals/buffs allowed; damage‑like names blocked). If any key spell is missing, tell us the exact name and we’ll refine the allowlist.
+- Cooldowns: Healbot first asks the game for remaining cooldown; if not available, it enforces a fallback GCD. You can tune `Spells.DefaultGCDSeconds` in the config file.
 
-- **Game Version**: Compatible with current Erenshor versions
-- **Other Mods**: Should be compatible with most BepInEx mods
-- **Multiplayer**: Designed to work in party-based gameplay
+## Build from source
 
-## Building from Source
-
-1. Clone this repository
-2. Ensure you have the required Erenshor assemblies in the `Assemblies/` folder:
+1) Place these assemblies in `Assemblies/` (from your game install):
    - `Assembly-CSharp.dll`
    - `Unity.TextMeshPro.dll`
    - `UnityEngine.UI.dll`
-3. Build using your preferred C# IDE or command line:
-   ```bash
-   dotnet build
-   ```
+
+2) Build: `dotnet build -c Release`
 
 ## Troubleshooting
 
-### Plugin Not Loading
-- Verify BepInEx is properly installed
-- Check that the DLL is in the correct plugins folder
-- Review the BepInEx console for error messages
-
-### Healing Not Working
-- Ensure you're in a party with other players
-- Check that you have healing spells available
-- Verify you have sufficient mana
-
-### Performance Issues
-- The plugin is designed to be lightweight
-- If experiencing issues, check for conflicts with other mods
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
-
-## License
-
-This project is provided as-is for the Erenshor community. Use at your own risk.
+- Can’t click names to heal:
+  - Ensure `UI.EnablePartyUIHook=true`
+  - Make sure the config window/backdrop is closed
+  - Toggle the hook with `H` if the UI changed
+- Picker list slow or empty:
+  - Use “Refresh Spells” once per session to rebuild
+  - Very large lists are cached to speed up subsequent opens
+- Damage spells are being blocked:
+  - Set `Spells.RestrictToBeneficial=false` if you need to allow damage (not recommended)
 
 ## Disclaimer
 
-This is a third-party modification not affiliated with or endorsed by the developers of Erenshor. Use of this mod may affect your gameplay experience and could potentially cause issues with game saves or online play.
+This is a third‑party mod not affiliated with the Erenshor devs. Use at your own risk.

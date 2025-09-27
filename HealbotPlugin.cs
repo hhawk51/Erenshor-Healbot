@@ -24,7 +24,6 @@ namespace ErenshorHealbot
 
         // Configuration
         private ConfigEntry<KeyCode> toggleUIKey;
-        private ConfigEntry<KeyCode> openConfigKey;
         private ConfigEntry<string> leftClickSpell;
         private ConfigEntry<string> rightClickSpell;
         private ConfigEntry<string> middleClickSpell;
@@ -51,7 +50,6 @@ namespace ErenshorHealbot
 
             // Setup configuration
             toggleUIKey = Config.Bind("Controls", "ToggleUI", KeyCode.H, "Key to toggle healbot UI");
-            openConfigKey = Config.Bind("Controls", "OpenConfig", KeyCode.F10, "Key to open the healbot spell configuration window");
             leftClickSpell = Config.Bind("Spells", "LeftClick", "Minor Healing", "Spell to cast on left click");
             rightClickSpell = Config.Bind("Spells", "RightClick", "Major Healing", "Spell to cast on right click");
             middleClickSpell = Config.Bind("Spells", "MiddleClick", "Group Heal", "Spell to cast on middle click");
@@ -142,7 +140,7 @@ namespace ErenshorHealbot
             if (!string.IsNullOrEmpty(middleSpell))
                 middleClickSpell.Value = middleSpell;
 
-            Logger.LogInfo($"Spell bindings updated: Left={leftClickSpell.Value}, Right={rightClickSpell.Value}, Middle={middleClickSpell.Value}");
+            // Removed noisy info log for production
         }
 
         private void Update()
@@ -153,11 +151,7 @@ namespace ErenshorHealbot
                 TogglePartyUIHook();
             }
 
-            // Open configuration window
-            if (Input.GetKeyDown(openConfigKey.Value) && spellConfigUI != null)
-            {
-                spellConfigUI.ToggleConfigWindow();
-            }
+            // Opening the configuration window is available via the on-screen HB button or Ctrl+H fallback.
 
             // Manual healing keybinds
             CheckHealingKeybinds();
@@ -399,7 +393,6 @@ namespace ErenshorHealbot
             // Cooldown checks: prefer engine-provided cooldown, else plugin fallback
             if (IsSpellOnCooldown(playerCaster, spell, out var remaining))
             {
-                Logger.LogInfo($"'{spell.SpellName}' is on cooldown ({remaining:0.0}s remaining)");
                 return;
             }
             if (IsLocallyThrottled(spell))

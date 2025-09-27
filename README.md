@@ -87,3 +87,21 @@ Note: F1–F4 currently cast using the Left Click spell binding.
 ## Disclaimer
 
 This is a third‑party mod not affiliated with the Erenshor devs. Use at your own risk.
+
+## Release Packaging
+
+- Zip name: `healbot-1.0.1.zip`
+- Contents:
+  - `healbot-1.0.1/`
+    - `Hawtin.Erenshor.Healbot.dll`
+    - `hb.png` (optional icon)
+
+Install: extract `healbot-1.0.1/` into `...[Erenshor]/BepInEx/plugins/`
+
+Final paths example:
+- `...[Erenshor]/BepInEx/plugins/healbot-1.0.1/Hawtin.Erenshor.Healbot.dll`
+- `...[Erenshor]/BepInEx/plugins/healbot-1.0.1/hb.png`
+
+Notes:
+- No config is required for the icon when placed next to the DLL.
+- If you prefer a custom icon location, set `UI.LauncherIcon` in the config.

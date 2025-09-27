@@ -45,6 +45,8 @@ A BepInEx plugin that adds click‑to‑heal, a simple spell config UI, and help
 - `H` – Toggle party click‑to‑heal hook
 - `F1/F2/F3/F4` – Heal player/member 1/2/3 (see config)
 
+Note: F1–F4 currently cast using the Left Click spell binding.
+
 ## Config (BepInEx)
 
 - `Controls.OpenConfig` (KeyCode) – Open config window (default: F10)

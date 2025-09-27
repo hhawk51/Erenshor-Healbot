@@ -16,6 +16,8 @@ namespace ErenshorHealbot
         private RectTransform panelRect;
         private GameObject launcherButton;
         private RectTransform launcherRect;
+        private Image launcherImage;
+        private Text launcherText;
 
         // Spell picker UI
         private GameObject spellPickerPanel;
@@ -827,12 +829,13 @@ namespace ErenshorHealbot
             launcherRect.pivot = new Vector2(1f, 1f);
             launcherRect.anchoredPosition = new Vector2(-20f, -20f);
 
-            var img = go.AddComponent<Image>();
-            img.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
-            img.raycastTarget = true;
+            launcherImage = go.AddComponent<Image>();
+            launcherImage.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
+            launcherImage.raycastTarget = true;
+            launcherImage.preserveAspect = true;
 
             var btn = go.AddComponent<Button>();
-            btn.targetGraphic = img;
+            btn.targetGraphic = launcherImage;
             btn.onClick.AddListener(() =>
             {
                 ToggleConfigWindow();
@@ -843,18 +846,51 @@ namespace ErenshorHealbot
             var tRect = textGO.AddComponent<RectTransform>();
             tRect.anchorMin = Vector2.zero; tRect.anchorMax = Vector2.one;
             tRect.offsetMin = Vector2.zero; tRect.offsetMax = Vector2.zero;
-            var txt = textGO.AddComponent<Text>();
-            txt.text = "HB";
-            txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            txt.fontSize = 14;
-            txt.alignment = TextAnchor.MiddleCenter;
-            txt.color = Color.white;
+            launcherText = textGO.AddComponent<Text>();
+            launcherText.text = "HB";
+            launcherText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            launcherText.fontSize = 14;
+            launcherText.alignment = TextAnchor.MiddleCenter;
+            launcherText.color = Color.white;
 
             var drag = go.AddComponent<PanelDragHandler>();
             drag.Initialize(launcherRect);
 
             launcherButton = go;
             launcherButton.transform.SetAsLastSibling();
+
+            TryApplyLauncherIcon();
+        }
+
+        private void TryApplyLauncherIcon()
+        {
+            if (plugin == null || launcherImage == null) return;
+            var path = plugin.GetLauncherIconPath();
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                // Resolve relative paths against BepInEx plugins directory
+                if (!System.IO.Path.IsPathRooted(path))
+                {
+                    var baseDir = BepInEx.Paths.PluginPath;
+                    path = System.IO.Path.Combine(baseDir, path);
+                }
+                if (!System.IO.File.Exists(path)) return;
+
+                byte[] data = System.IO.File.ReadAllBytes(path);
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (tex.LoadImage(data))
+                {
+                    var spr = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+                    launcherImage.sprite = spr;
+                    launcherImage.color = Color.white;
+                    launcherImage.type = Image.Type.Simple;
+                    launcherImage.preserveAspect = true;
+                    if (launcherText != null) launcherText.enabled = false; // hide HB text when using an icon
+                }
+            }
+            catch { }
         }
 
         // Helpers for child UI elements on the picker

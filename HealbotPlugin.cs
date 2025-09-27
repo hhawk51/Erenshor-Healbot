@@ -32,6 +32,7 @@ namespace ErenshorHealbot
         private ConfigEntry<bool> enablePartyUIHook;
         private ConfigEntry<bool> restrictToBeneficial;
         private ConfigEntry<float> defaultGCDSeconds;
+        private ConfigEntry<string> launcherIconPath;
         private ConfigEntry<KeyCode> healPlayerKey;
         private ConfigEntry<KeyCode> healMember1Key;
         private ConfigEntry<KeyCode> healMember2Key;
@@ -58,6 +59,7 @@ namespace ErenshorHealbot
             enablePartyUIHook = Config.Bind("UI", "EnablePartyUIHook", true, "Enable click-to-heal on existing party UI");
             restrictToBeneficial = Config.Bind("Spells", "RestrictToBeneficial", true, "Only allow beneficial spells (heals/buffs) when casting via Healbot");
             defaultGCDSeconds = Config.Bind("Spells", "DefaultGCDSeconds", 1.5f, "Fallback minimum time between casts when underlying cooldown info is unavailable");
+            launcherIconPath = Config.Bind("UI", "LauncherIcon", "", "Optional path to a PNG/JPG image to use for the HB launcher button (absolute or relative to BepInEx/plugins)");
             healPlayerKey = Config.Bind("Keybinds", "HealPlayer", KeyCode.F1, "Key to heal the player");
             healMember1Key = Config.Bind("Keybinds", "HealMember1", KeyCode.F2, "Key to heal party member 1");
             healMember2Key = Config.Bind("Keybinds", "HealMember2", KeyCode.F3, "Key to heal party member 2");
@@ -142,6 +144,8 @@ namespace ErenshorHealbot
 
             // Removed noisy info log for production
         }
+
+        public string GetLauncherIconPath() => launcherIconPath?.Value ?? string.Empty;
 
         private void Update()
         {

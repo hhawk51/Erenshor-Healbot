@@ -19,6 +19,7 @@ namespace ErenshorHealbot
         private Image launcherImage;
         private Text launcherText;
         private Toggle knownOnlyToggle;
+        private Toggle hideLauncherToggle;
 
         // Spell picker UI
         private GameObject spellPickerPanel;
@@ -67,6 +68,35 @@ namespace ErenshorHealbot
             {
                 CloseWindow();
             }
+
+            // Update launcher button visibility based on character login status and hide setting
+            UpdateLauncherButtonVisibility();
+        }
+
+        private void UpdateLauncherButtonVisibility()
+        {
+            if (launcherButton == null || plugin == null) return;
+
+            bool shouldShowLauncher = plugin.IsCharacterLoggedIn() && !plugin.IsLauncherButtonHidden;
+            bool isCurrentlyVisible = launcherButton.activeSelf;
+
+            // Only hide the launcher when the config window is closed
+            // When window is open, launcher should always be hidden regardless of login status
+            if (isWindowVisible)
+            {
+                if (isCurrentlyVisible)
+                {
+                    launcherButton.SetActive(false);
+                }
+            }
+            else
+            {
+                // Window is closed - show/hide based on login status and hide setting
+                if (shouldShowLauncher != isCurrentlyVisible)
+                {
+                    launcherButton.SetActive(shouldShowLauncher);
+                }
+            }
         }
 
         public void ToggleConfigWindow()
@@ -84,7 +114,13 @@ namespace ErenshorHealbot
                 isWindowVisible = !isWindowVisible;
                 configPanel.SetActive(isWindowVisible);
                 if (backdrop != null) backdrop.SetActive(isWindowVisible);
-                if (launcherButton != null) launcherButton.SetActive(!isWindowVisible);
+
+                // Only show launcher button when window is closed, character is logged in, and not hidden
+                if (launcherButton != null)
+                {
+                    bool shouldShowLauncher = !isWindowVisible && plugin != null && plugin.IsCharacterLoggedIn() && !plugin.IsLauncherButtonHidden;
+                    launcherButton.SetActive(shouldShowLauncher);
+                }
 
                 
 
@@ -176,11 +212,13 @@ namespace ErenshorHealbot
                 configPanel.transform.SetParent(canvasGO.transform, false);
 
                 panelRect = configPanel.AddComponent<RectTransform>();
-                panelRect.sizeDelta = new Vector2(560, 440);
+                panelRect.sizeDelta = new Vector2(560, 480);
                 panelRect.anchoredPosition = (plugin != null) ? plugin.GetSavedPanelPos() : Vector2.zero;
 
                 var panelImage = configPanel.AddComponent<Image>();
                 panelImage.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
+                panelImage.sprite = CreateRoundedSprite(560, 480, 8);
+                panelImage.type = Image.Type.Sliced;
 
                 CreateSimpleUI();
                 CreateLauncherButton(canvasGO.transform);
@@ -188,7 +226,11 @@ namespace ErenshorHealbot
 
                 configPanel.SetActive(false);
                 if (backdrop != null) backdrop.SetActive(false);
-                if (launcherButton != null) launcherButton.SetActive(true);
+                if (launcherButton != null)
+                {
+                    bool shouldShowLauncher = plugin != null && plugin.IsCharacterLoggedIn() && !plugin.IsLauncherButtonHidden;
+                    launcherButton.SetActive(shouldShowLauncher);
+                }
                 
             }
             catch (System.Exception ex)
@@ -200,8 +242,8 @@ namespace ErenshorHealbot
         private void CreateSimpleUI()
         {
             // Title
-            CreateLabel("Spell Configuration", new Vector2(0, 160), 22, FontStyle.Bold);
-            CreateChildButton(configPanel.transform, "×", new Vector2(260, 158), new Vector2(24, 24), new Color(0.6f, 0.2f, 0.2f, 1f), CloseWindow);
+            CreateLabel("Healbot Configuration", new Vector2(0, 160), 22, FontStyle.Bold);
+            CreateChildButton(configPanel.transform, "×", new Vector2(260, 158), new Vector2(24, 24), new Color(0.8f, 0.25f, 0.25f, 1f), CloseWindow);
 
             // Draggable area (title bar)
             var dragGO = new GameObject("DragHandle");
@@ -219,7 +261,7 @@ namespace ErenshorHealbot
             statusGO.transform.SetParent(configPanel.transform, false);
             var statusRect = statusGO.AddComponent<RectTransform>();
               statusRect.sizeDelta = new Vector2(580, 30);
-              statusRect.anchoredPosition = new Vector2(0, 130);
+              statusRect.anchoredPosition = new Vector2(0, 105);
             statusText = statusGO.AddComponent<Text>();
             statusText.text = "Initializing...";
             statusText.fontSize = 14;
@@ -232,7 +274,7 @@ namespace ErenshorHealbot
             dragIcon.transform.SetParent(configPanel.transform, false);
             var dragIconRect = dragIcon.AddComponent<RectTransform>();
             dragIconRect.sizeDelta = new Vector2(16, 16);
-            dragIconRect.anchoredPosition = new Vector2(-280, 196);
+            dragIconRect.anchoredPosition = new Vector2(-260, 196);
             var dragIconImg = dragIcon.AddComponent<Image>();
             dragIconImg.color = new Color(0.2f, 0.6f, 1f, 0.9f);
             dragIconRect.localEulerAngles = new Vector3(0, 0, 45f); // diamond
@@ -240,36 +282,48 @@ namespace ErenshorHealbot
             dragIconHandler.Initialize(panelRect, (pos)=> { if (plugin != null) plugin.SavePanelPos(panelRect.anchoredPosition); });
 
             // Separator
-            AddSeparator(new Vector2(0, 100), new Vector2(520, 2));
+            AddSeparator(new Vector2(0, 85), new Vector2(520, 2));
 
             // Spell input fields with pick buttons
-            CreateSpellInput("Left Click:", new Vector2(0, 120), out leftClickInput);
-            CreatePickButton(new Vector2(230, 120), leftClickInput);
+            CreateSpellInput("Left Click:", new Vector2(0, 65), out leftClickInput);
+            CreatePickButton(new Vector2(230, 65), leftClickInput);
 
-            CreateSpellInput("Right Click:", new Vector2(0, 80), out rightClickInput);
-            CreatePickButton(new Vector2(230, 80), rightClickInput);
+            CreateSpellInput("Right Click:", new Vector2(0, 25), out rightClickInput);
+            CreatePickButton(new Vector2(230, 25), rightClickInput);
 
-            CreateSpellInput("Middle Click:", new Vector2(0, 40), out middleClickInput);
-            CreatePickButton(new Vector2(230, 40), middleClickInput);
+            CreateSpellInput("Middle Click:", new Vector2(0, -15), out middleClickInput);
+            CreatePickButton(new Vector2(230, -15), middleClickInput);
 
             // Shift-modified bindings
-            CreateSpellInput("Shift+Left:", new Vector2(0, 0), out shiftLeftInput);
-            CreatePickButton(new Vector2(230, 0), shiftLeftInput);
+            CreateSpellInput("Shift+Left:", new Vector2(0, -55), out shiftLeftInput);
+            CreatePickButton(new Vector2(230, -55), shiftLeftInput);
 
-            CreateSpellInput("Shift+Right:", new Vector2(0, -40), out shiftRightInput);
-            CreatePickButton(new Vector2(230, -40), shiftRightInput);
+            CreateSpellInput("Shift+Right:", new Vector2(0, -95), out shiftRightInput);
+            CreatePickButton(new Vector2(230, -95), shiftRightInput);
 
-            CreateSpellInput("Shift+Middle:", new Vector2(0, -80), out shiftMiddleInput);
-            CreatePickButton(new Vector2(230, -80), shiftMiddleInput);
+            CreateSpellInput("Shift+Middle:", new Vector2(0, -135), out shiftMiddleInput);
+            CreatePickButton(new Vector2(230, -135), shiftMiddleInput);
+
+            // Bottom area background
+            var bottomAreaGO = new GameObject("BottomArea");
+            bottomAreaGO.transform.SetParent(configPanel.transform, false);
+            var bottomAreaRect = bottomAreaGO.AddComponent<RectTransform>();
+            bottomAreaRect.sizeDelta = new Vector2(560, 120);
+            bottomAreaRect.anchoredPosition = new Vector2(0, -215);
+            var bottomAreaImage = bottomAreaGO.AddComponent<Image>();
+            bottomAreaImage.color = new Color(0.08f, 0.08f, 0.08f, 0.9f);
+            bottomAreaImage.sprite = CreateRoundedSprite(560, 120, 6);
+            bottomAreaImage.type = Image.Type.Sliced;
 
             // Buttons
-            refreshButton = CreateButton("Refresh Spells", new Vector2(-140, -260), new Color(0.2f, 0.4f, 0.8f, 1f), RefreshSpells);
-            saveButton = CreateButton("Save Settings", new Vector2(0, -260), new Color(0.2f, 0.8f, 0.2f, 1f), SaveSettings);
-            closeButton = CreateButton("Save & Close", new Vector2(140, -260), new Color(0.8f, 0.2f, 0.2f, 1f), () => { SaveSettings(); CloseWindow(); });
+            refreshButton = CreateButton("Refresh Spells", new Vector2(-140, -200), new Color(0.25f, 0.5f, 0.9f, 1f), RefreshSpells);
+            saveButton = CreateButton("Save Settings", new Vector2(0, -200), new Color(0.2f, 0.75f, 0.3f, 1f), SaveSettings);
+            closeButton = CreateButton("Save & Close", new Vector2(140, -200), new Color(0.85f, 0.35f, 0.25f, 1f), () => { SaveSettings(); CloseWindow(); });
 
             // Instructions
-            CreateLabel("Use Ctrl+H to open this window\nType spell names or use Pick", new Vector2(0, -300), 12, FontStyle.Normal);
+            CreateLabel("Use Ctrl+H to open this window", new Vector2(0, -240), 12, FontStyle.Normal);
             CreateKnownOnlyToggle();
+            CreateHideLauncherToggle();
         }
 
         private void CreateLabel(string text, Vector2 position, int fontSize, FontStyle fontStyle)
@@ -315,7 +369,9 @@ namespace ErenshorHealbot
             inputRect.anchoredPosition = new Vector2(50, position.y);
 
             var inputImage = inputGO.AddComponent<Image>();
-            inputImage.color = new Color(0.2f, 0.2f, 0.2f, 1f);
+            inputImage.color = new Color(0.15f, 0.15f, 0.15f, 1f);
+            inputImage.sprite = CreateRoundedSprite(250, 25, 4);
+            inputImage.type = Image.Type.Sliced;
 
             inputField = inputGO.AddComponent<InputField>();
 
@@ -384,11 +440,20 @@ namespace ErenshorHealbot
             buttonRect.anchoredPosition = position;
 
             var image = buttonGO.AddComponent<Image>();
-            image.color = new Color(0.35f, 0.35f, 0.35f, 1f);
+            image.color = new Color(0.45f, 0.45f, 0.45f, 1f);
+            image.sprite = CreateRoundedSprite(60, 25, 4);
+            image.type = Image.Type.Sliced;
 
             var button = buttonGO.AddComponent<Button>();
             button.targetGraphic = image;
             button.onClick.AddListener(() => OpenSpellPickerFor(targetField));
+
+            // Add hover effect for pick buttons
+            var colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            colors.pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            button.colors = colors;
 
             var textGO = new GameObject("Text");
             textGO.transform.SetParent(buttonGO.transform, false);
@@ -416,6 +481,8 @@ namespace ErenshorHealbot
             panel.anchoredPosition = new Vector2(0, 0);
             var bg = spellPickerPanel.AddComponent<Image>();
             bg.color = new Color(0.08f, 0.08f, 0.08f, 0.95f);
+            bg.sprite = CreateRoundedSprite(420, 300, 6);
+            bg.type = Image.Type.Sliced;
 
             // Title
             CreateChildLabel(spellPickerPanel.transform, "Pick a Spell", new Vector2(0, 130), 16, FontStyle.Bold);
@@ -433,7 +500,9 @@ namespace ErenshorHealbot
             searchRect.sizeDelta = new Vector2(280, 24);
             searchRect.anchoredPosition = new Vector2(40, 95);
             var searchImg = searchGO.AddComponent<Image>();
-            searchImg.color = new Color(0.2f, 0.2f, 0.2f, 1f);
+            searchImg.color = new Color(0.15f, 0.15f, 0.15f, 1f);
+            searchImg.sprite = CreateRoundedSprite(280, 24, 4);
+            searchImg.type = Image.Type.Sliced;
             spellSearchField = searchGO.AddComponent<InputField>();
 
             var saGO = new GameObject("Text Area");
@@ -661,10 +730,20 @@ namespace ErenshorHealbot
 
             var buttonImage = buttonGO.AddComponent<Image>();
             buttonImage.color = color;
+            buttonImage.sprite = CreateRoundedSprite(120, 30, 6);
+            buttonImage.type = Image.Type.Sliced;
 
             var button = buttonGO.AddComponent<Button>();
             button.targetGraphic = buttonImage;
             button.onClick.AddListener(onClick);
+
+            // Add hover effect
+            var colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            colors.pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            colors.disabledColor = new Color(0.6f, 0.6f, 0.6f, 1f);
+            button.colors = colors;
 
             // Button text
             var textGO = new GameObject("Text");
@@ -777,7 +856,12 @@ namespace ErenshorHealbot
                     SetInputFieldValue(shiftMiddleInput, Get("shiftMiddleClickSpell"));
                 }
 
-                
+                // Load hide launcher button setting
+                if (hideLauncherToggle != null && plugin != null)
+                {
+                    hideLauncherToggle.isOn = plugin.IsLauncherButtonHidden;
+                }
+
             }
             catch (System.Exception ex)
             {
@@ -864,7 +948,8 @@ namespace ErenshorHealbot
             }
             if (launcherButton != null)
             {
-                launcherButton.SetActive(true);
+                bool shouldShowLauncher = plugin != null && plugin.IsCharacterLoggedIn() && !plugin.IsLauncherButtonHidden;
+                launcherButton.SetActive(shouldShowLauncher);
             }
             CloseSpellPicker();
         }
@@ -893,7 +978,7 @@ namespace ErenshorHealbot
             container.transform.SetParent(configPanel.transform, false);
             var rect = container.AddComponent<RectTransform>();
             rect.sizeDelta = new Vector2(220, 24);
-            rect.anchoredPosition = new Vector2(220, -220);
+            rect.anchoredPosition = new Vector2(180, -170);
 
             var bgGO = new GameObject("Background");
             bgGO.transform.SetParent(container.transform, false);
@@ -919,6 +1004,51 @@ namespace ErenshorHealbot
             CreateChildLabel(container.transform, "Known-only (picker)", new Vector2(20, 0), 12, FontStyle.Normal, TextAnchor.MiddleLeft, new Vector2(150, 20));
         }
 
+        private void CreateHideLauncherToggle()
+        {
+            var container = new GameObject("HideLauncher");
+            container.transform.SetParent(configPanel.transform, false);
+            var rect = container.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(220, 24);
+            rect.anchoredPosition = new Vector2(-180, -170);
+
+            var bgGO = new GameObject("Background");
+            bgGO.transform.SetParent(container.transform, false);
+            var bgRect = bgGO.AddComponent<RectTransform>();
+            bgRect.sizeDelta = new Vector2(18, 18);
+            bgRect.anchoredPosition = new Vector2(-75, 0);
+            var bgImg = bgGO.AddComponent<Image>();
+            bgImg.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
+
+            var ckGO = new GameObject("Checkmark");
+            ckGO.transform.SetParent(bgGO.transform, false);
+            var ckRect = ckGO.AddComponent<RectTransform>();
+            ckRect.sizeDelta = new Vector2(14, 14);
+            ckRect.anchoredPosition = Vector2.zero;
+            var ckImg = ckGO.AddComponent<Image>();
+            ckImg.color = new Color(0.8f, 0.8f, 0.8f, 1f);
+
+            hideLauncherToggle = container.AddComponent<Toggle>();
+            hideLauncherToggle.targetGraphic = bgImg;
+            hideLauncherToggle.graphic = ckImg;
+            hideLauncherToggle.isOn = plugin != null ? plugin.IsLauncherButtonHidden : false;
+
+            // Add listener to save setting when toggled
+            hideLauncherToggle.onValueChanged.AddListener(OnHideLauncherToggled);
+
+            CreateChildLabel(container.transform, "Hide launcher button", new Vector2(20, 0), 12, FontStyle.Normal, TextAnchor.MiddleLeft, new Vector2(150, 20));
+        }
+
+        private void OnHideLauncherToggled(bool isHidden)
+        {
+            if (plugin != null)
+            {
+                plugin.SetLauncherButtonHidden(isHidden);
+                // Immediately update launcher visibility
+                UpdateLauncherButtonVisibility();
+            }
+        }
+
         private void AddSeparator(Vector2 anchoredPos, Vector2 size)
         {
             var sep = new GameObject("Separator");
@@ -935,7 +1065,19 @@ namespace ErenshorHealbot
             if (field == null || target == null) return;
             var val = (field.text ?? string.Empty).Trim();
             bool ok = string.IsNullOrEmpty(val) || availableSpells.Any(s => s.Equals(val, System.StringComparison.OrdinalIgnoreCase));
-            target.color = ok ? new Color(0.2f, 0.35f, 0.2f, 1f) : new Color(0.35f, 0.2f, 0.2f, 1f);
+
+            if (string.IsNullOrEmpty(val))
+            {
+                target.color = new Color(0.15f, 0.15f, 0.15f, 1f); // Default color
+            }
+            else if (ok)
+            {
+                target.color = new Color(0.1f, 0.4f, 0.15f, 1f); // Valid - subtle green
+            }
+            else
+            {
+                target.color = new Color(0.4f, 0.15f, 0.1f, 1f); // Invalid - subtle red
+            }
         }
 
         private void CreateLauncherButton(Transform parent)
@@ -950,7 +1092,9 @@ namespace ErenshorHealbot
             launcherRect.anchoredPosition = (plugin != null) ? plugin.GetSavedLauncherPos() : new Vector2(-20f, -20f);
 
             launcherImage = go.AddComponent<Image>();
-            launcherImage.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
+            launcherImage.color = new Color(0.12f, 0.12f, 0.12f, 0.95f);
+            launcherImage.sprite = CreateRoundedSprite(72, 72, 18);
+            launcherImage.type = Image.Type.Sliced;
             launcherImage.raycastTarget = true;
             launcherImage.preserveAspect = true;
 
@@ -960,6 +1104,13 @@ namespace ErenshorHealbot
             {
                 ToggleConfigWindow();
             });
+
+            // Add hover effect for launcher
+            var colors = btn.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            colors.pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            btn.colors = colors;
 
             var textGO = new GameObject("Text");
             textGO.transform.SetParent(go.transform, false);
@@ -1067,9 +1218,18 @@ namespace ErenshorHealbot
             rect.anchoredPosition = position;
             var img = go.AddComponent<Image>();
             img.color = color;
+            img.sprite = CreateRoundedSprite((int)size.x, (int)size.y, 4);
+            img.type = Image.Type.Sliced;
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = img;
             btn.onClick.AddListener(onClick);
+
+            // Add hover effect
+            var colors = btn.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.1f, 1.1f, 1.1f, 1f);
+            colors.pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            btn.colors = colors;
 
             var textGO = new GameObject("Text");
             textGO.transform.SetParent(go.transform, false);
@@ -1097,6 +1257,37 @@ namespace ErenshorHealbot
                 // Persist to ensure UI remains usable even if scenes change or game lacks one
                 DontDestroyOnLoad(esGO);
             }
+        }
+
+        private Sprite CreateRoundedSprite(int width, int height, int cornerRadius)
+        {
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            var pixels = new Color32[width * height];
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    bool isInside = true;
+
+                    // Check corners
+                    if ((x < cornerRadius && y < cornerRadius) ||
+                        (x >= width - cornerRadius && y < cornerRadius) ||
+                        (x < cornerRadius && y >= height - cornerRadius) ||
+                        (x >= width - cornerRadius && y >= height - cornerRadius))
+                    {
+                        float cornerX = x < width / 2 ? cornerRadius - x : x - (width - cornerRadius - 1);
+                        float cornerY = y < height / 2 ? cornerRadius - y : y - (height - cornerRadius - 1);
+                        isInside = cornerX * cornerX + cornerY * cornerY <= cornerRadius * cornerRadius;
+                    }
+
+                    pixels[y * width + x] = isInside ? Color.white : Color.clear;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply();
+            return Sprite.Create(texture, new Rect(0, 0, width, height), Vector2.one * 0.5f);
         }
 
         // Simple panel drag handler

@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -49,6 +50,7 @@ namespace ErenshorHealbot
         private ConfigEntry<string> healMember1Spell;
         private ConfigEntry<string> healMember2Spell;
         private ConfigEntry<string> healMember3Spell;
+        private ConfigEntry<bool> hideLauncherButton;
 
         // Group member tracking for auto-targeting
         private List<GroupMember> groupMembers = new List<GroupMember>();
@@ -83,6 +85,7 @@ namespace ErenshorHealbot
             healMember1Spell = Config.Bind("KeybindSpells", "HealMember1Spell", "Minor Healing", "Spell to cast when healing party member 1");
             healMember2Spell = Config.Bind("KeybindSpells", "HealMember2Spell", "Minor Healing", "Spell to cast when healing party member 2");
             healMember3Spell = Config.Bind("KeybindSpells", "HealMember3Spell", "Minor Healing", "Spell to cast when healing party member 3");
+            hideLauncherButton = Config.Bind("UI", "HideLauncherButton", false, "Hide the launcher button (can still use Ctrl+H to open config)");
 
             _harmony = new Harmony("Hawtin.Erenshor.Healbot");
             try
@@ -94,7 +97,6 @@ namespace ErenshorHealbot
                 Logger.LogWarning($"Harmony patching failed: {ex.Message}");
             }
 
-            Logger.LogInfo("Erenshor Healbot loaded!");
 
             // Initialize party UI hook instead of creating duplicate UI
             if (enablePartyUIHook.Value)
@@ -114,7 +116,6 @@ namespace ErenshorHealbot
                 DontDestroyOnLoad(hookGO);
                 partyUIHook = hookGO.AddComponent<PartyUIHook>();
                 partyUIHook.Initialize(this);
-                Logger.LogInfo("Party UI hook initialized - click-to-heal enabled on existing party UI");
             }
         }
 
@@ -128,7 +129,6 @@ namespace ErenshorHealbot
                 spellConfigUI = configUIGO.AddComponent<SpellConfigUI>();
                 spellConfigUI.Initialize(this);
                 
-                Logger.LogInfo("Spell configuration UI initialized - press the OpenConfig key (default F10) or Ctrl+H to configure spells");
             }
         }
 
@@ -694,6 +694,58 @@ namespace ErenshorHealbot
         public bool IsBeneficialSpell(Spell s) => s != null && IsBeneficialSpellName(s.SpellName);
 
         public bool RestrictToBeneficialEnabled => restrictToBeneficial.Value;
+
+        public bool IsLauncherButtonHidden => hideLauncherButton.Value;
+
+        public void SetLauncherButtonHidden(bool hidden)
+        {
+            hideLauncherButton.Value = hidden;
+        }
+
+        public bool IsCharacterLoggedIn()
+        {
+            // Check multiple indicators to ensure we're actually in-game, not just at character selection
+            try
+            {
+                // First check scene - avoid character selection scenes
+                var activeScene = SceneManager.GetActiveScene();
+                string currentSceneName = activeScene.IsValid() ? activeScene.name : "Unknown";
+
+                if (!string.IsNullOrEmpty(currentSceneName))
+                {
+                    var sceneName = currentSceneName.ToLowerInvariant();
+                    // Exclude character selection scenes - specifically LoadScene and other common names
+                    if (sceneName.Contains("loadscene") || sceneName.Contains("character") ||
+                        sceneName.Contains("select") || sceneName.Contains("login") ||
+                        sceneName.Contains("menu") || sceneName.Contains("lobby") ||
+                        sceneName.Contains("title") || sceneName == "loadscene")
+                    {
+                        return false;
+                    }
+                }
+
+                if (GameData.PlayerStats == null || string.IsNullOrEmpty(GameData.PlayerStats.MyName))
+                    return false;
+
+                if (GameData.PlayerControl == null)
+                    return false;
+
+                // Additional check: ensure player has meaningful health values (not just initialized)
+                if (GameData.PlayerStats.CurrentHP <= 0 || GameData.PlayerStats.CurrentMaxHP <= 0)
+                    return false;
+
+                // Check if player can cast spells (only available in-game)
+                var caster = GameData.PlayerControl.GetComponent<CastSpell>();
+                if (caster == null)
+                    return false;
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         // Debug overlay removed
 

@@ -648,13 +648,29 @@ namespace ErenshorHealbot
             availableSpells.Add("None");
             try
             {
-                // Only include spells the player currently knows
+                // Include spells the player currently knows
                 var playerCaster = GameData.PlayerControl?.GetComponent<CastSpell>();
                 if (playerCaster?.KnownSpells != null)
                 {
                     foreach (var spell in playerCaster.KnownSpells)
                     {
-                        if (spell != null && !string.IsNullOrEmpty(spell.SpellName) && !availableSpells.Contains(spell.SpellName))
+                        if (spell != null && !string.IsNullOrEmpty(spell.SpellName))
+                        {
+                            if (!availableSpells.Contains(spell.SpellName))
+                            {
+                                availableSpells.Add(spell.SpellName);
+                            }
+                        }
+                    }
+                }
+
+                // Also include any loaded Spell assets found in resources
+                var allSpells = Resources.FindObjectsOfTypeAll<Spell>();
+                foreach (var spell in allSpells)
+                {
+                    if (spell != null && !string.IsNullOrEmpty(spell.SpellName))
+                    {
+                        if (!availableSpells.Contains(spell.SpellName))
                         {
                             availableSpells.Add(spell.SpellName);
                         }
@@ -664,6 +680,12 @@ namespace ErenshorHealbot
             catch (System.Exception ex)
             {
                 Debug.LogError($"[SpellConfigUI] Error refreshing spells: {ex.Message}");
+            }
+
+            // Ensure we have at least some options
+            if (availableSpells.Count <= 1)
+            {
+                availableSpells.AddRange(new[] { "Minor Healing", "Major Healing", "Group Heal" });
             }
         }
 

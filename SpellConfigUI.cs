@@ -644,53 +644,26 @@ namespace ErenshorHealbot
 
         private void RefreshAvailableSpells()
         {
-            
             availableSpells.Clear();
             availableSpells.Add("None");
-
             try
             {
-                // Method 1: From player's known spells (THIS WAS WORKING!)
+                // Only include spells the player currently knows
                 var playerCaster = GameData.PlayerControl?.GetComponent<CastSpell>();
                 if (playerCaster?.KnownSpells != null)
                 {
                     foreach (var spell in playerCaster.KnownSpells)
                     {
-                        if (spell != null && !string.IsNullOrEmpty(spell.SpellName))
-                        {
-                            if (!availableSpells.Contains(spell.SpellName))
-                            {
-                                availableSpells.Add(spell.SpellName);
-                            }
-                        }
-                    }
-                }
-
-                // Method 2: From all spell resources (THIS WAS ALSO WORKING!)
-                var allSpells = Resources.FindObjectsOfTypeAll<Spell>();
-                foreach (var spell in allSpells)
-                {
-                    if (spell != null && !string.IsNullOrEmpty(spell.SpellName))
-                    {
-                        if (!availableSpells.Contains(spell.SpellName))
+                        if (spell != null && !string.IsNullOrEmpty(spell.SpellName) && !availableSpells.Contains(spell.SpellName))
                         {
                             availableSpells.Add(spell.SpellName);
                         }
                     }
                 }
-
-                
             }
             catch (System.Exception ex)
             {
                 Debug.LogError($"[SpellConfigUI] Error refreshing spells: {ex.Message}");
-            }
-
-            // Ensure we have at least some options
-            if (availableSpells.Count <= 1)
-            {
-                availableSpells.AddRange(new[] { "Minor Healing", "Major Healing", "Group Heal" });
-                
             }
         }
 

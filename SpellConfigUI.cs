@@ -34,6 +34,9 @@ namespace ErenshorHealbot
         private InputField leftClickInput;
         private InputField rightClickInput;
         private InputField middleClickInput;
+        private InputField shiftLeftInput;
+        private InputField shiftRightInput;
+        private InputField shiftMiddleInput;
         private Button saveButton;
         private Button closeButton;
         private Button refreshButton;
@@ -228,19 +231,29 @@ namespace ErenshorHealbot
             AddSeparator(new Vector2(0, 100), new Vector2(520, 2));
 
             // Spell input fields with pick buttons
-            CreateSpellInput("Left Click Spell:", new Vector2(0, 80), out leftClickInput);
+            CreateSpellInput("Left Click:", new Vector2(0, 80), out leftClickInput);
             CreatePickButton(new Vector2(190, 80), leftClickInput);
 
-            CreateSpellInput("Right Click Spell:", new Vector2(0, 40), out rightClickInput);
+            CreateSpellInput("Right Click:", new Vector2(0, 40), out rightClickInput);
             CreatePickButton(new Vector2(190, 40), rightClickInput);
 
-            CreateSpellInput("Middle Click Spell:", new Vector2(0, 0), out middleClickInput);
+            CreateSpellInput("Middle Click:", new Vector2(0, 0), out middleClickInput);
             CreatePickButton(new Vector2(190, 0), middleClickInput);
 
+            // Shift-modified bindings
+            CreateSpellInput("Shift+Left:", new Vector2(0, -40), out shiftLeftInput);
+            CreatePickButton(new Vector2(190, -40), shiftLeftInput);
+
+            CreateSpellInput("Shift+Right:", new Vector2(0, -80), out shiftRightInput);
+            CreatePickButton(new Vector2(190, -80), shiftRightInput);
+
+            CreateSpellInput("Shift+Middle:", new Vector2(0, -120), out shiftMiddleInput);
+            CreatePickButton(new Vector2(190, -120), shiftMiddleInput);
+
             // Buttons
-            refreshButton = CreateButton("Refresh Spells", new Vector2(-120, -90), new Color(0.2f, 0.4f, 0.8f, 1f), RefreshSpells);
-            saveButton = CreateButton("Save Settings", new Vector2(0, -90), new Color(0.2f, 0.8f, 0.2f, 1f), SaveSettings);
-            closeButton = CreateButton("Save & Close", new Vector2(120, -90), new Color(0.8f, 0.2f, 0.2f, 1f), () => { SaveSettings(); CloseWindow(); });
+            refreshButton = CreateButton("Refresh Spells", new Vector2(-120, -160), new Color(0.2f, 0.4f, 0.8f, 1f), RefreshSpells);
+            saveButton = CreateButton("Save Settings", new Vector2(0, -160), new Color(0.2f, 0.8f, 0.2f, 1f), SaveSettings);
+            closeButton = CreateButton("Save & Close", new Vector2(120, -160), new Color(0.8f, 0.2f, 0.2f, 1f), () => { SaveSettings(); CloseWindow(); });
 
             // Instructions
             CreateLabel("Use Ctrl+H to open this window\nType spell names or use Pick", new Vector2(0, -140), 12, FontStyle.Normal);
@@ -730,6 +743,28 @@ namespace ErenshorHealbot
                 SetInputFieldValue(rightClickInput, rightSpell);
                 SetInputFieldValue(middleClickInput, middleSpell);
 
+                // Load shift bindings directly from plugin config via reflection-safe getters
+                // (We don't have explicit getters; keep fields in sync as best effort)
+                // Use the same names used in config
+                var cfg = HealbotPlugin.Instance;
+                if (cfg != null)
+                {
+                    var t = typeof(HealbotPlugin);
+                    string Get(string name)
+                    {
+                        try
+                        {
+                            var f = t.GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            var ce = f?.GetValue(cfg) as BepInEx.Configuration.ConfigEntry<string>;
+                            return ce != null ? ce.Value : string.Empty;
+                        }
+                        catch { return string.Empty; }
+                    }
+                    SetInputFieldValue(shiftLeftInput, Get("shiftLeftClickSpell"));
+                    SetInputFieldValue(shiftRightInput, Get("shiftRightClickSpell"));
+                    SetInputFieldValue(shiftMiddleInput, Get("shiftMiddleClickSpell"));
+                }
+
                 
             }
             catch (System.Exception ex)
@@ -761,13 +796,20 @@ namespace ErenshorHealbot
                 string leftSpell = leftClickInput != null ? leftClickInput.text.Trim() : "";
                 string rightSpell = rightClickInput != null ? rightClickInput.text.Trim() : "";
                 string middleSpell = middleClickInput != null ? middleClickInput.text.Trim() : "";
+                string shiftLeft = shiftLeftInput != null ? shiftLeftInput.text.Trim() : "";
+                string shiftRight = shiftRightInput != null ? shiftRightInput.text.Trim() : "";
+                string shiftMiddle = shiftMiddleInput != null ? shiftMiddleInput.text.Trim() : "";
 
                 // Validate spell names against available spells
                 leftSpell = ValidateSpellName(leftSpell);
                 rightSpell = ValidateSpellName(rightSpell);
                 middleSpell = ValidateSpellName(middleSpell);
+                shiftLeft = ValidateSpellName(shiftLeft);
+                shiftRight = ValidateSpellName(shiftRight);
+                shiftMiddle = ValidateSpellName(shiftMiddle);
 
                 plugin.UpdateSpellBindings(leftSpell, rightSpell, middleSpell);
+                plugin.UpdateShiftSpellBindings(shiftLeft, shiftRight, shiftMiddle);
                 UpdateStatusText("Settings saved successfully!");
 
                 

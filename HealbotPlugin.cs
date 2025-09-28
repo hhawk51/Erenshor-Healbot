@@ -28,6 +28,9 @@ namespace ErenshorHealbot
         private ConfigEntry<string> leftClickSpell;
         private ConfigEntry<string> rightClickSpell;
         private ConfigEntry<string> middleClickSpell;
+        private ConfigEntry<string> shiftLeftClickSpell;
+        private ConfigEntry<string> shiftRightClickSpell;
+        private ConfigEntry<string> shiftMiddleClickSpell;
         private ConfigEntry<bool> autoTargetEnabled;
         private ConfigEntry<float> healthThreshold;
         private ConfigEntry<bool> enablePartyUIHook;
@@ -59,6 +62,9 @@ namespace ErenshorHealbot
             leftClickSpell = Config.Bind("Spells", "LeftClick", "Minor Healing", "Spell to cast on left click");
             rightClickSpell = Config.Bind("Spells", "RightClick", "Major Healing", "Spell to cast on right click");
             middleClickSpell = Config.Bind("Spells", "MiddleClick", "Group Heal", "Spell to cast on middle click");
+            shiftLeftClickSpell = Config.Bind("Spells", "ShiftLeftClick", "", "Spell to cast on Shift+Left click (optional)");
+            shiftRightClickSpell = Config.Bind("Spells", "ShiftRightClick", "", "Spell to cast on Shift+Right click (optional)");
+            shiftMiddleClickSpell = Config.Bind("Spells", "ShiftMiddleClick", "", "Spell to cast on Shift+Middle click (optional)");
             autoTargetEnabled = Config.Bind("Automation", "AutoTarget", true, "Automatically target low health members");
             healthThreshold = Config.Bind("Automation", "HealthThreshold", 0.5f, "Health percentage to consider 'low' (0.0-1.0)");
             enablePartyUIHook = Config.Bind("UI", "EnablePartyUIHook", true, "Enable click-to-heal on existing party UI");
@@ -128,14 +134,15 @@ namespace ErenshorHealbot
 
         public string GetSpellForButton(PointerEventData.InputButton button)
         {
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             switch (button)
             {
                 case PointerEventData.InputButton.Left:
-                    return leftClickSpell.Value;
+                    return shift && !string.IsNullOrWhiteSpace(shiftLeftClickSpell.Value) ? shiftLeftClickSpell.Value : leftClickSpell.Value;
                 case PointerEventData.InputButton.Right:
-                    return rightClickSpell.Value;
+                    return shift && !string.IsNullOrWhiteSpace(shiftRightClickSpell.Value) ? shiftRightClickSpell.Value : rightClickSpell.Value;
                 case PointerEventData.InputButton.Middle:
-                    return middleClickSpell.Value;
+                    return shift && !string.IsNullOrWhiteSpace(shiftMiddleClickSpell.Value) ? shiftMiddleClickSpell.Value : middleClickSpell.Value;
                 default:
                     return null;
             }
@@ -152,6 +159,16 @@ namespace ErenshorHealbot
                 middleClickSpell.Value = middleSpell;
 
             // Removed noisy info log for production
+        }
+
+        public void UpdateShiftSpellBindings(string shiftLeft, string shiftRight, string shiftMiddle)
+        {
+            if (!string.IsNullOrEmpty(shiftLeft))
+                shiftLeftClickSpell.Value = shiftLeft;
+            if (!string.IsNullOrEmpty(shiftRight))
+                shiftRightClickSpell.Value = shiftRight;
+            if (!string.IsNullOrEmpty(shiftMiddle))
+                shiftMiddleClickSpell.Value = shiftMiddle;
         }
 
         public string GetLauncherIconPath() => launcherIconPath?.Value ?? string.Empty;

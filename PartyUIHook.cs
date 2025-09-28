@@ -310,7 +310,7 @@ namespace ErenshorHealbot
                 }
                 else
                 {
-                    overlayImage.color = new Color(1, 0, 0, 0.05f); // Subtle red for party members
+                    overlayImage.color = new Color(1, 0, 0, 0f); // Fully transparent for party members
                 }
                 overlayImage.raycastTarget = true;
                 overlayImage.maskable = false;

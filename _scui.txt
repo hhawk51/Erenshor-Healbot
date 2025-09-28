@@ -218,8 +218,8 @@ namespace ErenshorHealbot
             var statusGO = new GameObject("Status");
             statusGO.transform.SetParent(configPanel.transform, false);
             var statusRect = statusGO.AddComponent<RectTransform>();
-              statusRect.sizeDelta = new Vector2(580, 30);
-              statusRect.anchoredPosition = new Vector2(0, 160);
+            statusRect.sizeDelta = new Vector2(520, 30);
+            statusRect.anchoredPosition = new Vector2(0, 120);
             statusText = statusGO.AddComponent<Text>();
             statusText.text = "Initializing...";
             statusText.fontSize = 14;
@@ -1128,3 +1128,4 @@ namespace ErenshorHealbot
         }
     }
 }
+

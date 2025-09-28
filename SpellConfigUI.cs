@@ -219,13 +219,25 @@ namespace ErenshorHealbot
             statusGO.transform.SetParent(configPanel.transform, false);
             var statusRect = statusGO.AddComponent<RectTransform>();
               statusRect.sizeDelta = new Vector2(580, 30);
-              statusRect.anchoredPosition = new Vector2(0, 160);
+              statusRect.anchoredPosition = new Vector2(0, 130);
             statusText = statusGO.AddComponent<Text>();
             statusText.text = "Initializing...";
             statusText.fontSize = 14;
             statusText.color = Color.yellow;
             statusText.alignment = TextAnchor.MiddleCenter;
             statusText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            
+            // Add a small blue diamond drag icon
+            var dragIcon = new GameObject("DragIcon");
+            dragIcon.transform.SetParent(configPanel.transform, false);
+            var dragIconRect = dragIcon.AddComponent<RectTransform>();
+            dragIconRect.sizeDelta = new Vector2(16, 16);
+            dragIconRect.anchoredPosition = new Vector2(-280, 196);
+            var dragIconImg = dragIcon.AddComponent<Image>();
+            dragIconImg.color = new Color(0.2f, 0.6f, 1f, 0.9f);
+            dragIconRect.localEulerAngles = new Vector3(0, 0, 45f); // diamond
+            var dragIconHandler = dragIcon.AddComponent<PanelDragHandler>();
+            dragIconHandler.Initialize(panelRect, (pos)=> { if (plugin != null) plugin.SavePanelPos(panelRect.anchoredPosition); });
 
             // Separator
             AddSeparator(new Vector2(0, 100), new Vector2(520, 2));
@@ -880,8 +892,8 @@ namespace ErenshorHealbot
             var container = new GameObject("KnownOnly");
             container.transform.SetParent(configPanel.transform, false);
             var rect = container.AddComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(180, 24);
-            rect.anchoredPosition = new Vector2(190, -40);
+            rect.sizeDelta = new Vector2(220, 24);
+            rect.anchoredPosition = new Vector2(220, -220);
 
             var bgGO = new GameObject("Background");
             bgGO.transform.SetParent(container.transform, false);

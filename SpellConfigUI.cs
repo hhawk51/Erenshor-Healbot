@@ -231,32 +231,32 @@ namespace ErenshorHealbot
             AddSeparator(new Vector2(0, 100), new Vector2(520, 2));
 
             // Spell input fields with pick buttons
-            CreateSpellInput("Left Click:", new Vector2(0, 80), out leftClickInput);
-            CreatePickButton(new Vector2(190, 80), leftClickInput);
+            CreateSpellInput("Left Click:", new Vector2(0, 120), out leftClickInput);
+            CreatePickButton(new Vector2(230, 120), leftClickInput);
 
-            CreateSpellInput("Right Click:", new Vector2(0, 40), out rightClickInput);
-            CreatePickButton(new Vector2(190, 40), rightClickInput);
+            CreateSpellInput("Right Click:", new Vector2(0, 80), out rightClickInput);
+            CreatePickButton(new Vector2(230, 80), rightClickInput);
 
-            CreateSpellInput("Middle Click:", new Vector2(0, 0), out middleClickInput);
-            CreatePickButton(new Vector2(190, 0), middleClickInput);
+            CreateSpellInput("Middle Click:", new Vector2(0, 40), out middleClickInput);
+            CreatePickButton(new Vector2(230, 40), middleClickInput);
 
             // Shift-modified bindings
-            CreateSpellInput("Shift+Left:", new Vector2(0, -40), out shiftLeftInput);
-            CreatePickButton(new Vector2(190, -40), shiftLeftInput);
+            CreateSpellInput("Shift+Left:", new Vector2(0, 0), out shiftLeftInput);
+            CreatePickButton(new Vector2(230, 0), shiftLeftInput);
 
-            CreateSpellInput("Shift+Right:", new Vector2(0, -80), out shiftRightInput);
-            CreatePickButton(new Vector2(190, -80), shiftRightInput);
+            CreateSpellInput("Shift+Right:", new Vector2(0, -40), out shiftRightInput);
+            CreatePickButton(new Vector2(230, -40), shiftRightInput);
 
-            CreateSpellInput("Shift+Middle:", new Vector2(0, -120), out shiftMiddleInput);
-            CreatePickButton(new Vector2(190, -120), shiftMiddleInput);
+            CreateSpellInput("Shift+Middle:", new Vector2(0, -80), out shiftMiddleInput);
+            CreatePickButton(new Vector2(230, -80), shiftMiddleInput);
 
             // Buttons
-            refreshButton = CreateButton("Refresh Spells", new Vector2(-120, -160), new Color(0.2f, 0.4f, 0.8f, 1f), RefreshSpells);
-            saveButton = CreateButton("Save Settings", new Vector2(0, -160), new Color(0.2f, 0.8f, 0.2f, 1f), SaveSettings);
-            closeButton = CreateButton("Save & Close", new Vector2(120, -160), new Color(0.8f, 0.2f, 0.2f, 1f), () => { SaveSettings(); CloseWindow(); });
+            refreshButton = CreateButton("Refresh Spells", new Vector2(-140, -260), new Color(0.2f, 0.4f, 0.8f, 1f), RefreshSpells);
+            saveButton = CreateButton("Save Settings", new Vector2(0, -260), new Color(0.2f, 0.8f, 0.2f, 1f), SaveSettings);
+            closeButton = CreateButton("Save & Close", new Vector2(140, -260), new Color(0.8f, 0.2f, 0.2f, 1f), () => { SaveSettings(); CloseWindow(); });
 
             // Instructions
-            CreateLabel("Use Ctrl+H to open this window\nType spell names or use Pick", new Vector2(0, -140), 12, FontStyle.Normal);
+            CreateLabel("Use Ctrl+H to open this window\nType spell names or use Pick", new Vector2(0, -300), 12, FontStyle.Normal);
             CreateKnownOnlyToggle();
         }
 

@@ -55,6 +55,10 @@ namespace ErenshorHealbot
         // Group member tracking for auto-targeting
         private List<GroupMember> groupMembers = new List<GroupMember>();
 
+        // Character-specific configuration system
+        private CharacterConfig currentCharacterConfig;
+        private string lastLoadedCharacter = null;
+
         private void Awake()
         {
             Instance = this;
@@ -135,40 +139,84 @@ namespace ErenshorHealbot
         public string GetSpellForButton(PointerEventData.InputButton button)
         {
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            string spell = null;
             switch (button)
             {
                 case PointerEventData.InputButton.Left:
-                    return shift && !string.IsNullOrWhiteSpace(shiftLeftClickSpell.Value) ? shiftLeftClickSpell.Value : leftClickSpell.Value;
+                    spell = shift && !string.IsNullOrWhiteSpace(shiftLeftClickSpell.Value) ? shiftLeftClickSpell.Value : leftClickSpell.Value;
+                    break;
                 case PointerEventData.InputButton.Right:
-                    return shift && !string.IsNullOrWhiteSpace(shiftRightClickSpell.Value) ? shiftRightClickSpell.Value : rightClickSpell.Value;
+                    spell = shift && !string.IsNullOrWhiteSpace(shiftRightClickSpell.Value) ? shiftRightClickSpell.Value : rightClickSpell.Value;
+                    break;
                 case PointerEventData.InputButton.Middle:
-                    return shift && !string.IsNullOrWhiteSpace(shiftMiddleClickSpell.Value) ? shiftMiddleClickSpell.Value : middleClickSpell.Value;
+                    spell = shift && !string.IsNullOrWhiteSpace(shiftMiddleClickSpell.Value) ? shiftMiddleClickSpell.Value : middleClickSpell.Value;
+                    break;
                 default:
-                    return null;
+                    spell = null;
+                    break;
             }
+
+            return spell;
         }
 
         public void UpdateSpellBindings(string leftSpell, string rightSpell, string middleSpell)
         {
-            // Update the configuration entries
-            if (!string.IsNullOrEmpty(leftSpell))
-                leftClickSpell.Value = leftSpell;
-            if (!string.IsNullOrEmpty(rightSpell))
-                rightClickSpell.Value = rightSpell;
-            if (!string.IsNullOrEmpty(middleSpell))
-                middleClickSpell.Value = middleSpell;
+            // Check if left-click spell is changing
+            bool leftSpellChanged = !string.Equals(leftClickSpell.Value, leftSpell ?? "", StringComparison.OrdinalIgnoreCase);
 
-            // Removed noisy info log for production
+            // Update the configuration entries
+            leftClickSpell.Value = leftSpell ?? "";
+            rightClickSpell.Value = rightSpell ?? "";
+            middleClickSpell.Value = middleSpell ?? "";
+
+            // Update character config object first, before saving
+            if (currentCharacterConfig != null)
+            {
+                currentCharacterConfig.LeftClickSpell = leftSpell ?? "";
+                currentCharacterConfig.RightClickSpell = rightSpell ?? "";
+                currentCharacterConfig.MiddleClickSpell = middleSpell ?? "";
+            }
+
+            // If left-click spell changed, update keybind spells to match
+            if (leftSpellChanged && !string.IsNullOrEmpty(leftSpell))
+            {
+                healPlayerSpell.Value = leftSpell;
+                healMember1Spell.Value = leftSpell;
+                healMember2Spell.Value = leftSpell;
+                healMember3Spell.Value = leftSpell;
+
+                // Also update the character config object so it saves correctly
+                if (currentCharacterConfig != null)
+                {
+                    currentCharacterConfig.HealPlayerSpell = leftSpell;
+                    currentCharacterConfig.HealMember1Spell = leftSpell;
+                    currentCharacterConfig.HealMember2Spell = leftSpell;
+                    currentCharacterConfig.HealMember3Spell = leftSpell;
+                }
+            }
+
+            // Save character config when settings change
+            if (!string.IsNullOrEmpty(lastPlayerIdentity))
+                SaveCharacterConfig(lastPlayerIdentity);
         }
 
         public void UpdateShiftSpellBindings(string shiftLeft, string shiftRight, string shiftMiddle)
         {
-            if (!string.IsNullOrEmpty(shiftLeft))
-                shiftLeftClickSpell.Value = shiftLeft;
-            if (!string.IsNullOrEmpty(shiftRight))
-                shiftRightClickSpell.Value = shiftRight;
-            if (!string.IsNullOrEmpty(shiftMiddle))
-                shiftMiddleClickSpell.Value = shiftMiddle;
+            shiftLeftClickSpell.Value = shiftLeft ?? "";
+            shiftRightClickSpell.Value = shiftRight ?? "";
+            shiftMiddleClickSpell.Value = shiftMiddle ?? "";
+
+            // Update character config object first, before saving
+            if (currentCharacterConfig != null)
+            {
+                currentCharacterConfig.ShiftLeftClickSpell = shiftLeft ?? "";
+                currentCharacterConfig.ShiftRightClickSpell = shiftRight ?? "";
+                currentCharacterConfig.ShiftMiddleClickSpell = shiftMiddle ?? "";
+            }
+
+            // Save character config when settings change
+            if (!string.IsNullOrEmpty(lastPlayerIdentity))
+                SaveCharacterConfig(lastPlayerIdentity);
         }
 
         public string GetLauncherIconPath() => launcherIconPath?.Value ?? string.Empty;
@@ -227,14 +275,37 @@ namespace ErenshorHealbot
                 if (lastPlayerIdentity == null)
                 {
                     lastPlayerIdentity = current;
+                    if (!string.IsNullOrEmpty(current))
+                    {
+                        LoadCharacterConfig(current);
+                    }
                     return;
                 }
                 if (!string.Equals(lastPlayerIdentity, current))
                 {
+                    // Save config for previous character before switching
+                    if (!string.IsNullOrEmpty(lastPlayerIdentity))
+                    {
+                        SaveCharacterConfig(lastPlayerIdentity);
+                    }
+
                     lastPlayerIdentity = current;
+
+                    // Load config for new character
+                    if (!string.IsNullOrEmpty(current))
+                    {
+                        LoadCharacterConfig(current);
+                    }
+
                     if (spellConfigUI != null)
                     {
                         spellConfigUI.InvalidateSpellCache();
+                    }
+
+                    // Reinitialize party UI hooks for new character
+                    if (partyUIHook != null && !string.IsNullOrEmpty(current))
+                    {
+                        partyUIHook.ForceRescanForCharacterSwitch();
                     }
                 }
             }
@@ -275,12 +346,7 @@ namespace ErenshorHealbot
                 // Heal player
                 if (GameData.PlayerStats != null)
                 {
-                    Logger.LogInfo($"Healing {memberDesc} ({GameData.PlayerStats.MyName}) with {spellToUse}");
                     CastSpellOnTarget(GameData.PlayerStats, spellToUse);
-                }
-                else
-                {
-                    Logger.LogWarning($"Cannot heal {memberDesc} - no player stats");
                 }
             }
             else
@@ -292,17 +358,8 @@ namespace ErenshorHealbot
                     var member = groupMembers.Skip(1).ElementAtOrDefault(actualIndex); // Skip player
                     if (member != null && member.stats != null)
                     {
-                        Logger.LogInfo($"Healing {memberDesc} ({member.name}) with {spellToUse}");
                         CastSpellOnTarget(member.stats, spellToUse);
                     }
-                    else
-                    {
-                        Logger.LogWarning($"Cannot heal {memberDesc} - no member found");
-                    }
-                }
-                else
-                {
-                    Logger.LogWarning($"Cannot heal {memberDesc} - not enough group members ({groupMembers.Count})");
                 }
             }
         }
@@ -323,18 +380,14 @@ namespace ErenshorHealbot
         {
             if (partyUIHook == null)
             {
-                Logger.LogInfo("Healbot party UI hook toggled ON");
                 InitializePartyUIHook();
             }
             else
             {
-                Logger.LogInfo("Healbot party UI hook toggled OFF");
                 Destroy(partyUIHook.gameObject);
                 partyUIHook = null;
             }
         }
-
-        private int lastLoggedMemberCount = -1;
 
         private void UpdateGroupMembers()
         {
@@ -378,17 +431,6 @@ namespace ErenshorHealbot
                         isPlayer = false
                     });
                 }
-            }
-
-            if (groupMembers.Count != lastLoggedMemberCount)
-            {
-                lastLoggedMemberCount = groupMembers.Count;
-                try
-                {
-                    var names = string.Join(", ", groupMembers.Select(g => g.name));
-                    Logger.LogInfo($"Healbot group detected: {groupMembers.Count} [{names}]");
-                }
-                catch { }
             }
         }
 
@@ -446,6 +488,10 @@ namespace ErenshorHealbot
         public void CastSpellOnTarget(Stats target, string spellName)
         {
             if (target == null || string.IsNullOrEmpty(spellName)) return;
+
+            // Skip casting if "None" is selected
+            if (spellName.Equals("None", StringComparison.OrdinalIgnoreCase))
+                return;
 
             var playerCaster = GameData.PlayerControl?.GetComponent<CastSpell>();
             if (playerCaster == null) return;
@@ -702,6 +748,14 @@ namespace ErenshorHealbot
             hideLauncherButton.Value = hidden;
         }
 
+        public void SaveCurrentCharacterConfig()
+        {
+            if (!string.IsNullOrEmpty(lastPlayerIdentity))
+            {
+                SaveCharacterConfig(lastPlayerIdentity);
+            }
+        }
+
         public bool IsCharacterLoggedIn()
         {
             // Check multiple indicators to ensure we're actually in-game, not just at character selection
@@ -747,6 +801,137 @@ namespace ErenshorHealbot
             }
         }
 
+        // Character-specific configuration management
+        private void LoadCharacterConfig(string characterName)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(characterName))
+                    return;
+
+                var configPath = GetCharacterConfigPath(characterName);
+                if (File.Exists(configPath))
+                {
+                    var json = File.ReadAllText(configPath);
+                    currentCharacterConfig = JsonUtility.FromJson<CharacterConfig>(json);
+                    // Apply loaded config to current settings
+                    ApplyCharacterConfig();
+                }
+                else
+                {
+                    // Create new config with current global settings
+                    // For new characters, default keybind spells to left-click spell
+                    var defaultKeybindSpell = leftClickSpell.Value;
+                    currentCharacterConfig = new CharacterConfig
+                    {
+                        CharacterName = characterName,
+                        LeftClickSpell = leftClickSpell.Value,
+                        RightClickSpell = rightClickSpell.Value,
+                        MiddleClickSpell = middleClickSpell.Value,
+                        ShiftLeftClickSpell = shiftLeftClickSpell.Value,
+                        ShiftRightClickSpell = shiftRightClickSpell.Value,
+                        ShiftMiddleClickSpell = shiftMiddleClickSpell.Value,
+                        HealPlayerSpell = defaultKeybindSpell,
+                        HealMember1Spell = defaultKeybindSpell,
+                        HealMember2Spell = defaultKeybindSpell,
+                        HealMember3Spell = defaultKeybindSpell,
+                        HideLauncherButton = hideLauncherButton.Value,
+                        KnownOnlySpellPicker = false // Default to false for new characters
+                    };
+
+                    SaveCharacterConfig(characterName);
+                }
+
+                lastLoadedCharacter = characterName;
+            }
+            catch
+            {
+                currentCharacterConfig = null;
+            }
+        }
+
+        private void SaveCharacterConfig(string characterName)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(characterName) || currentCharacterConfig == null)
+                    return;
+
+                // Update config with current spell settings
+                currentCharacterConfig.CharacterName = characterName;
+                currentCharacterConfig.LeftClickSpell = leftClickSpell.Value;
+                currentCharacterConfig.RightClickSpell = rightClickSpell.Value;
+                currentCharacterConfig.MiddleClickSpell = middleClickSpell.Value;
+                currentCharacterConfig.ShiftLeftClickSpell = shiftLeftClickSpell.Value;
+                currentCharacterConfig.ShiftRightClickSpell = shiftRightClickSpell.Value;
+                currentCharacterConfig.ShiftMiddleClickSpell = shiftMiddleClickSpell.Value;
+                currentCharacterConfig.HealPlayerSpell = healPlayerSpell.Value;
+                currentCharacterConfig.HealMember1Spell = healMember1Spell.Value;
+                currentCharacterConfig.HealMember2Spell = healMember2Spell.Value;
+                currentCharacterConfig.HealMember3Spell = healMember3Spell.Value;
+                currentCharacterConfig.HideLauncherButton = hideLauncherButton.Value;
+
+                // Get known-only setting from UI if available
+                if (spellConfigUI != null)
+                {
+                    currentCharacterConfig.KnownOnlySpellPicker = spellConfigUI.GetKnownOnlyToggleState();
+                }
+
+                var configPath = GetCharacterConfigPath(characterName);
+                var configDir = Path.GetDirectoryName(configPath);
+
+                if (!Directory.Exists(configDir))
+                    Directory.CreateDirectory(configDir);
+
+                var json = JsonUtility.ToJson(currentCharacterConfig, true);
+                File.WriteAllText(configPath, json);
+            }
+            catch { }
+        }
+
+        private void ApplyCharacterConfig()
+        {
+            if (currentCharacterConfig == null)
+                return;
+
+            try
+            {
+                // Apply spell settings from character config
+                leftClickSpell.Value = currentCharacterConfig.LeftClickSpell ?? "Minor Healing";
+                rightClickSpell.Value = currentCharacterConfig.RightClickSpell ?? "Major Healing";
+                middleClickSpell.Value = currentCharacterConfig.MiddleClickSpell ?? "Group Heal";
+                shiftLeftClickSpell.Value = currentCharacterConfig.ShiftLeftClickSpell ?? "";
+                shiftRightClickSpell.Value = currentCharacterConfig.ShiftRightClickSpell ?? "";
+                shiftMiddleClickSpell.Value = currentCharacterConfig.ShiftMiddleClickSpell ?? "";
+
+                // For keybind spells, default to left-click spell if not set
+                var keybindDefault = currentCharacterConfig.LeftClickSpell ?? "Minor Healing";
+                healPlayerSpell.Value = currentCharacterConfig.HealPlayerSpell ?? keybindDefault;
+                healMember1Spell.Value = currentCharacterConfig.HealMember1Spell ?? keybindDefault;
+                healMember2Spell.Value = currentCharacterConfig.HealMember2Spell ?? keybindDefault;
+                healMember3Spell.Value = currentCharacterConfig.HealMember3Spell ?? keybindDefault;
+
+                // Apply UI settings
+                hideLauncherButton.Value = currentCharacterConfig.HideLauncherButton;
+
+                // Apply known-only setting to UI if available
+                if (spellConfigUI != null)
+                {
+                    spellConfigUI.SetKnownOnlyToggleState(currentCharacterConfig.KnownOnlySpellPicker);
+                }
+
+            }
+            catch { }
+        }
+
+        private string GetCharacterConfigPath(string characterName)
+        {
+            // Sanitize character name for file system
+            var safeName = string.Join("_", characterName.Split(Path.GetInvalidFileNameChars()));
+            var configDir = Path.Combine(GetPluginDirectory(), "Characters");
+            return Path.Combine(configDir, $"{safeName}.json");
+        }
+
         // Debug overlay removed
 
         private void OnDestroy()
@@ -771,5 +956,23 @@ namespace ErenshorHealbot
         public Stats stats;
         public string name;
         public bool isPlayer;
+    }
+
+    [System.Serializable]
+    public class CharacterConfig
+    {
+        public string CharacterName;
+        public string LeftClickSpell;
+        public string RightClickSpell;
+        public string MiddleClickSpell;
+        public string ShiftLeftClickSpell;
+        public string ShiftRightClickSpell;
+        public string ShiftMiddleClickSpell;
+        public string HealPlayerSpell;
+        public string HealMember1Spell;
+        public string HealMember2Spell;
+        public string HealMember3Spell;
+        public bool HideLauncherButton;
+        public bool KnownOnlySpellPicker;
     }
 }

@@ -84,7 +84,13 @@ namespace ErenshorHealbot
             }
         }
 
-        private void ScanForPartyUI()
+        public void ForceRescanForCharacterSwitch()
+        {
+            hasFoundUI = false; // Reset so we rescan
+            ScanForPartyUI();
+        }
+
+        public void ScanForPartyUI()
         {
             try
             {

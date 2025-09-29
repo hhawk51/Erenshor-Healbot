@@ -136,10 +136,7 @@ namespace ErenshorHealbot
                     UpdateStatusText("Ready");
                 }
             }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[SpellConfigUI] Error in ToggleConfigWindow: {ex.Message}");
-            }
+            catch { }
         }
 
         // Called by plugin when character switches; rebuilds cache if UI is open
@@ -231,12 +228,9 @@ namespace ErenshorHealbot
                     bool shouldShowLauncher = plugin != null && plugin.IsCharacterLoggedIn() && !plugin.IsLauncherButtonHidden;
                     launcherButton.SetActive(shouldShowLauncher);
                 }
-                
+
             }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[SpellConfigUI] Error creating UI: {ex.Message}");
-            }
+            catch { }
         }
 
         private void CreateSimpleUI()
@@ -609,8 +603,10 @@ namespace ErenshorHealbot
                 Destroy(child.gameObject);
             }
 
-            // Start from all non-empty entries
-            IEnumerable<string> spells = availableSpells.Where(s => !string.IsNullOrEmpty(s));
+            // Start from all non-empty entries, but separate "None" for special handling
+            var nonNoneSpells = availableSpells.Where(s => !string.IsNullOrEmpty(s) && !s.Equals("None", System.StringComparison.OrdinalIgnoreCase));
+            IEnumerable<string> spells = nonNoneSpells;
+
             // Filter to known-only if enabled
             if (knownOnlyToggle != null && knownOnlyToggle.isOn)
             {
@@ -636,21 +632,21 @@ namespace ErenshorHealbot
                 spells = spells.Where(s => s.ToLowerInvariant().Contains(f));
                 // Sort filtered results A-Z (case-insensitive)
                 spells = spells.OrderBy(s => s, System.StringComparer.OrdinalIgnoreCase);
+
+                // Add "None" at the top if it matches the filter
+                var finalList = new List<string>();
+                if ("none".Contains(f))
+                {
+                    finalList.Add("None");
+                }
+                finalList.AddRange(spells);
+                spells = finalList;
             }
             else
             {
-                // When no filter, keep "None" at the top if present, then A-Z for the rest
-                var noneFirst = spells.Any(s => s.Equals("None", System.StringComparison.OrdinalIgnoreCase));
-                var sorted = spells
-                    .Where(s => !s.Equals("None", System.StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(s => s, System.StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                if (noneFirst)
-                {
-                    // Prepend "None"
-                    sorted.Insert(0, availableSpells.First(s => s.Equals("None", System.StringComparison.OrdinalIgnoreCase)));
-                }
+                // When no filter, always put "None" at the top, then A-Z for the rest
+                var sorted = spells.OrderBy(s => s, System.StringComparer.OrdinalIgnoreCase).ToList();
+                sorted.Insert(0, "None");
                 spells = sorted;
             }
 
@@ -801,10 +797,7 @@ namespace ErenshorHealbot
                     }
                 }
             }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[SpellConfigUI] Error refreshing spells: {ex.Message}");
-            }
+            catch { }
 
             // Ensure we have at least some options
             if (availableSpells.Count <= 1)
@@ -863,10 +856,7 @@ namespace ErenshorHealbot
                 }
 
             }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[SpellConfigUI] Error loading settings: {ex.Message}");
-            }
+            catch { }
         }
 
         private void SetInputFieldValue(InputField inputField, string value)
@@ -910,9 +900,8 @@ namespace ErenshorHealbot
 
                 
             }
-            catch (System.Exception ex)
+            catch
             {
-                Debug.LogError($"[SpellConfigUI] Error saving: {ex.Message}");
                 UpdateStatusText("Error saving settings!");
             }
         }
@@ -964,6 +953,19 @@ namespace ErenshorHealbot
             }
         }
 
+        public bool GetKnownOnlyToggleState()
+        {
+            return knownOnlyToggle != null ? knownOnlyToggle.isOn : false;
+        }
+
+        public void SetKnownOnlyToggleState(bool isOn)
+        {
+            if (knownOnlyToggle != null)
+            {
+                knownOnlyToggle.isOn = isOn;
+            }
+        }
+
         private void OnDestroy()
         {
             if (uiCanvas != null)
@@ -1000,6 +1002,9 @@ namespace ErenshorHealbot
             knownOnlyToggle.targetGraphic = bgImg;
             knownOnlyToggle.graphic = ckImg;
             knownOnlyToggle.isOn = false;
+
+            // Add listener to save config when toggle changes
+            knownOnlyToggle.onValueChanged.AddListener(OnKnownOnlyToggleChanged);
 
             CreateChildLabel(container.transform, "Known-only (picker)", new Vector2(20, 0), 12, FontStyle.Normal, TextAnchor.MiddleLeft, new Vector2(150, 20));
         }
@@ -1046,6 +1051,17 @@ namespace ErenshorHealbot
                 plugin.SetLauncherButtonHidden(isHidden);
                 // Immediately update launcher visibility
                 UpdateLauncherButtonVisibility();
+                // Save character config when launcher visibility changes
+                plugin.SaveCurrentCharacterConfig();
+            }
+        }
+
+        private void OnKnownOnlyToggleChanged(bool isOn)
+        {
+            // Save character config when known-only toggle changes
+            if (plugin != null)
+            {
+                plugin.SaveCurrentCharacterConfig();
             }
         }
 

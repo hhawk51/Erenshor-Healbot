@@ -71,7 +71,7 @@ namespace ErenshorHealbot
             shiftLeftClickSpell = Config.Bind("Spells", "ShiftLeftClick", "", "Spell to cast on Shift+Left click (optional)");
             shiftRightClickSpell = Config.Bind("Spells", "ShiftRightClick", "", "Spell to cast on Shift+Right click (optional)");
             shiftMiddleClickSpell = Config.Bind("Spells", "ShiftMiddleClick", "", "Spell to cast on Shift+Middle click (optional)");
-            autoTargetEnabled = Config.Bind("Automation", "AutoTarget", true, "Automatically target low health members");
+            autoTargetEnabled = Config.Bind("Automation", "AutoTarget", false, "Automatically target low health members");
             healthThreshold = Config.Bind("Automation", "HealthThreshold", 0.5f, "Health percentage to consider 'low' (0.0-1.0)");
             enablePartyUIHook = Config.Bind("UI", "EnablePartyUIHook", true, "Enable click-to-heal on existing party UI");
             restrictToBeneficial = Config.Bind("Spells", "RestrictToBeneficial", true, "Only allow beneficial spells (heals/buffs) when casting via Healbot");

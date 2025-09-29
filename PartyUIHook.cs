@@ -13,6 +13,7 @@ namespace ErenshorHealbot
         private Canvas targetCanvas;
         private EventSystem eventSystem;
         private List<PartyRowHandler> partyRowHandlers = new List<PartyRowHandler>();
+        private List<PetRowHandler> petRowHandlers = new List<PetRowHandler>();
 
         private float scanTimer = 0f;
         private const float SCAN_INTERVAL = 5f; // Scan for party UI every 5 seconds
@@ -36,10 +37,21 @@ namespace ErenshorHealbot
         private void Update()
         {
             scanTimer += Time.deltaTime;
-            if (scanTimer >= SCAN_INTERVAL && !hasFoundUI)
+            if (scanTimer >= SCAN_INTERVAL)
             {
                 scanTimer = 0f;
-                ScanForPartyUI();
+
+                // Always rescan for pet UI since pets can be summoned/dismissed
+                // But only rescan party UI if we haven't found it yet
+                if (!hasFoundUI)
+                {
+                    ScanForPartyUI();
+                }
+                else
+                {
+                    // Just check for pets if party UI is already found
+                    ScanForPetUI();
+                }
             }
 
             // Global click detection for player UI
@@ -90,6 +102,28 @@ namespace ErenshorHealbot
             ScanForPartyUI();
         }
 
+        public void ScanForPetUI()
+        {
+            try
+            {
+                // Look for pet UI elements at CharmedPar/CharmedNPC/LifeBG/
+                var charmedPar = GameObject.Find("UI/UIElements/CharmedPar");
+                if (charmedPar != null)
+                {
+                    // Check if CharmedNPC container is now active (pet summoned)
+                    var charmedNPC = charmedPar.transform.Find("CharmedNPC");
+                    if (charmedNPC != null && charmedNPC.gameObject.activeSelf)
+                    {
+                        SetupPetUIHooks(charmedPar);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error in ScanForPetUI: {ex.Message}");
+            }
+        }
+
         public void ScanForPartyUI()
         {
             try
@@ -126,6 +160,38 @@ namespace ErenshorHealbot
                 {
                     SetupPartyUIHooks(newGroupPar);
                     foundAnyUI = true;
+                }
+
+                // Look for pet UI elements at CharmedPar/CharmedNPC/LifeBG/
+                var charmedPar = GameObject.Find("UI/UIElements/CharmedPar");
+                if (charmedPar != null)
+                {
+                    SetupPetUIHooks(charmedPar);
+                    foundAnyUI = true;
+                }
+                else
+                {
+                    // Try alternative pet UI searches
+                    var altCharmedPar = GameObject.Find("CharmedPar");
+                    if (altCharmedPar != null)
+                    {
+                        SetupPetUIHooks(altCharmedPar);
+                        foundAnyUI = true;
+                    }
+                    else
+                    {
+                        // Try recursive search for pet UI
+                        var uiRoot = GameObject.Find("UI");
+                        if (uiRoot != null)
+                        {
+                            var foundPetUI = FindPetUIRecursive(uiRoot.transform);
+                            if (foundPetUI != null)
+                            {
+                                SetupPetUIHooks(foundPetUI);
+                                foundAnyUI = true;
+                            }
+                        }
+                    }
                 }
 
                 // If neither found, try recursive search
@@ -175,6 +241,27 @@ namespace ErenshorHealbot
             return null;
         }
 
+        private GameObject FindPetUIRecursive(Transform parent)
+        {
+            // Search for CharmedPar, CharmedNPC, or pet-related UI elements
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                var child = parent.GetChild(i);
+                var name = child.name.ToLower();
+
+                if (name.Contains("charmed") || name.Contains("pet") || name.Contains("companion"))
+                {
+                    return child.gameObject;
+                }
+
+                // Recursively search children
+                var result = FindPetUIRecursive(child);
+                if (result != null) return result;
+            }
+            return null;
+        }
+
+
         private void SetupPartyUIHooks(GameObject playerLifePar)
         {
             // Clear existing handlers
@@ -191,6 +278,27 @@ namespace ErenshorHealbot
 
             // Ensure Canvas has GraphicRaycaster
             EnsureCanvasRaycaster(playerLifePar);
+        }
+
+        private void SetupPetUIHooks(GameObject charmedPar)
+        {
+            try
+            {
+                // Find pet LifeBG elements under CharmedPar/CharmedNPC/LifeBG/
+                var petLifeBGs = FindPetLifeBGElements(charmedPar.transform);
+
+                foreach (var petLifeBG in petLifeBGs)
+                {
+                    SetupPetRowHook(petLifeBG);
+                }
+
+                // Ensure Canvas has GraphicRaycaster
+                EnsureCanvasRaycaster(charmedPar);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error in SetupPetUIHooks: {ex.Message}");
+            }
         }
 
         private List<GameObject> FindLifeBGElements(Transform parent)
@@ -226,6 +334,68 @@ namespace ErenshorHealbot
 
             return lifeBGs;
         }
+
+        private List<GameObject> FindPetLifeBGElements(Transform charmedPar)
+        {
+            var petLifeBGs = new List<GameObject>();
+
+            try
+            {
+                // Search for CharmedNPC containers under CharmedPar
+                SearchForPetLifeBG(charmedPar, petLifeBGs);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error in FindPetLifeBGElements: {ex.Message}");
+            }
+
+            return petLifeBGs;
+        }
+
+        private void SearchForPetLifeBG(Transform parent, List<GameObject> results)
+        {
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                var child = parent.GetChild(i);
+                var name = child.name;
+
+                // Look for CharmedNPC containers or LifeBG elements
+                if (name == "CharmedNPC" || name.Contains("CharmedNPC"))
+                {
+                    // Only process if CharmedNPC is active (pet is summoned)
+                    if (child.gameObject.activeSelf)
+                    {
+                        SearchForPetLifeBG(child, results);
+                    }
+                }
+                else if (name == "LifeBG" && HasPetComponents(child))
+                {
+                    var path = GetFullPath(child);
+                    if (path.Contains("CharmedPar") && !results.Any(r => GetFullPath(r.transform).StartsWith(path)))
+                    {
+                        results.Add(child.gameObject);
+                    }
+                }
+
+                // Continue searching children recursively only if parent is active
+                if (child.gameObject.activeSelf)
+                {
+                    SearchForPetLifeBG(child, results);
+                }
+            }
+        }
+
+
+        private bool HasPetComponents(Transform element)
+        {
+            // For pets, we only need an Image component (text might be in sibling elements)
+            var hasImage = element.GetComponent<Image>() != null ||
+                          element.GetComponentInChildren<Image>() != null;
+
+            // Pet LifeBG might not have text directly, so be more lenient
+            return hasImage;
+        }
+
 
         private void SearchForLifeBG(Transform parent, List<GameObject> results)
         {
@@ -361,6 +531,59 @@ namespace ErenshorHealbot
             }
         }
 
+        private void SetupPetRowHook(GameObject petLifeBG)
+        {
+            try
+            {
+                // Skip if this element already has our handler
+                var existingPetHandler = petLifeBG.GetComponent<PetRowHandler>();
+                if (existingPetHandler != null)
+                {
+                    return;
+                }
+
+                // Create click overlay similar to party members
+                var clickOverlay = new GameObject("HealbotPetClickOverlay");
+                clickOverlay.transform.SetParent(petLifeBG.transform, false);
+
+                var overlayRect = clickOverlay.AddComponent<RectTransform>();
+                overlayRect.anchorMin = Vector2.zero;
+                overlayRect.anchorMax = Vector2.one;
+                overlayRect.offsetMin = Vector2.zero;
+                overlayRect.offsetMax = Vector2.zero;
+                overlayRect.sizeDelta = Vector2.zero;
+
+                var overlayImage = clickOverlay.AddComponent<Image>();
+                overlayImage.color = new Color(0, 0, 1, 0f); // Blue, fully transparent for pets
+                overlayImage.raycastTarget = true;
+                overlayImage.maskable = false;
+
+                // Remove any existing PetRowHandler components to avoid conflicts
+                var existingHandlers = clickOverlay.GetComponents<PetRowHandler>();
+                for (int i = 0; i < existingHandlers.Length; i++)
+                {
+                    Destroy(existingHandlers[i]);
+                }
+
+                try
+                {
+                    var overlayHandler = clickOverlay.AddComponent<PetRowHandler>();
+                    overlayHandler.Initialize(plugin, petLifeBG);
+                    petRowHandlers.Add(overlayHandler);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"HealbotPlugin: Failed to add PetRowHandler: {ex.Message}");
+                }
+
+                clickOverlay.transform.SetAsLastSibling();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error in SetupPetRowHook: {ex.Message}");
+            }
+        }
+
         private void EnsureCanvasRaycaster(GameObject uiElement)
         {
             var canvas = uiElement.GetComponentInParent<Canvas>();
@@ -385,6 +608,15 @@ namespace ErenshorHealbot
                 }
             }
             partyRowHandlers.Clear();
+
+            foreach (var handler in petRowHandlers)
+            {
+                if (handler != null)
+                {
+                    Destroy(handler);
+                }
+            }
+            petRowHandlers.Clear();
 
             // Also clean up any old TestClickHandler components from previous versions
             try
@@ -591,6 +823,209 @@ namespace ErenshorHealbot
                 FindTargetStats();
             }
 
+        }
+    }
+
+    public class PetRowHandler : MonoBehaviour, IPointerClickHandler
+    {
+        private HealbotPlugin plugin;
+        private Stats targetStats;
+        private GameObject rowGameObject;
+
+        public void Initialize(HealbotPlugin healbotPlugin, GameObject petLifeBG)
+        {
+            try
+            {
+                plugin = healbotPlugin;
+                rowGameObject = petLifeBG;
+                FindPetTargetStats();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Exception in PetRowHandler.Initialize: {ex.Message}");
+            }
+        }
+
+        private void FindPetTargetStats()
+        {
+            try
+            {
+                // Method 1: Try to find pet stats through game data exploration
+                targetStats = FindPetStatsByExploration();
+                if (targetStats != null)
+                {
+                    return;
+                }
+
+                // Method 2: Try name matching as fallback
+                var nameText = GetPetNameFromUI();
+                if (!string.IsNullOrEmpty(nameText))
+                {
+                    targetStats = FindStatsByName(nameText);
+                    if (targetStats != null)
+                    {
+                        return;
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error in FindPetTargetStats: {ex.Message}");
+            }
+        }
+
+        private Stats FindPetStatsByExploration()
+        {
+            try
+            {
+                // Based on CharmedNPC code, pet stats are at:
+                // GameData.PlayerControl.Myself.MyCharmedNPC.GetComponent<Stats>()
+
+                if (GameData.PlayerControl?.Myself?.MyCharmedNPC != null)
+                {
+                    var charmedNPC = GameData.PlayerControl.Myself.MyCharmedNPC;
+                    var charmedStats = charmedNPC.GetComponent<Stats>();
+
+                    if (charmedStats != null)
+                    {
+                        return charmedStats;
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error in FindPetStatsByExploration: {ex.Message}");
+            }
+
+            return null;
+        }
+
+
+        private string GetPetNameFromUI()
+        {
+            // Look for pet name in parent CharmedNPC container (based on UI structure logs)
+            var charmedNPCParent = rowGameObject.transform.parent;
+            while (charmedNPCParent != null && charmedNPCParent.name != "CharmedNPC")
+            {
+                charmedNPCParent = charmedNPCParent.parent;
+            }
+
+            if (charmedNPCParent != null)
+            {
+                // Look for TargetName specifically
+                var targetNameText = charmedNPCParent.Find("Image (2)/TargetName");
+                if (targetNameText != null)
+                {
+                    var tmpText = targetNameText.GetComponent<TextMeshProUGUI>();
+                    if (tmpText != null && !string.IsNullOrEmpty(tmpText.text))
+                    {
+                        return tmpText.text.Trim();
+                    }
+                }
+
+                // Fallback to any text under CharmedNPC
+                var tmpTexts = charmedNPCParent.GetComponentsInChildren<TextMeshProUGUI>();
+                foreach (var tmp in tmpTexts)
+                {
+                    if (!string.IsNullOrEmpty(tmp.text) &&
+                        !tmp.text.Contains("/") &&
+                        !tmp.text.Contains("%") &&
+                        !tmp.text.Contains("Attack") &&
+                        !tmp.text.Contains("Back") &&
+                        !tmp.text.Contains("Break") &&
+                        tmp.name.Contains("TargetName"))
+                    {
+                        return tmp.text.Trim();
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private Stats FindStatsByName(string name)
+        {
+            // First check the known charmed NPC path
+            try
+            {
+                if (GameData.PlayerControl?.Myself?.MyCharmedNPC != null)
+                {
+                    var charmedStats = GameData.PlayerControl.Myself.MyCharmedNPC.GetComponent<Stats>();
+                    if (charmedStats != null && !string.IsNullOrEmpty(charmedStats.MyName) &&
+                        charmedStats.MyName.Equals(name, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        return charmedStats;
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error checking charmed NPC by name: {ex.Message}");
+            }
+
+            // Fallback to searching all Stats objects
+            try
+            {
+                var allStats = Resources.FindObjectsOfTypeAll<Stats>();
+                foreach (var stats in allStats)
+                {
+                    if (!string.IsNullOrEmpty(stats.MyName) &&
+                        stats.MyName.Equals(name, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        return stats;
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"HealbotPlugin: Error in FindStatsByName: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (targetStats == null)
+            {
+                // Try to find stats again
+                FindPetTargetStats();
+                if (targetStats == null)
+                {
+                    return;
+                }
+            }
+
+            if (plugin == null)
+            {
+                return;
+            }
+
+            string spellName = plugin.GetSpellForButton(eventData.button);
+            if (!string.IsNullOrEmpty(spellName))
+            {
+                plugin.CastSpellOnTarget(targetStats, spellName);
+            }
+        }
+
+        private string GetFullPath(Transform transform)
+        {
+            string path = transform.name;
+            while (transform.parent != null)
+            {
+                transform = transform.parent;
+                path = transform.name + "/" + path;
+            }
+            return path;
+        }
+
+        private void Update()
+        {
+            // Periodically re-scan for target stats if missing
+            if (targetStats == null)
+            {
+                FindPetTargetStats();
+            }
         }
     }
 

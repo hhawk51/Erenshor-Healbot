@@ -22,6 +22,7 @@ namespace ErenshorHealbot
         private Harmony _harmony;
         private PartyUIHook partyUIHook;
         private SpellConfigUI spellConfigUI;
+        private EventSystem eventSystem;
         
 
         // Configuration
@@ -101,15 +102,11 @@ namespace ErenshorHealbot
                 Logger.LogWarning($"Harmony patching failed: {ex.Message}");
             }
 
+            // CRITICAL: Ensure EventSystem exists before any UI components
+            EnsureEventSystem();
 
-            // Initialize party UI hook instead of creating duplicate UI
-            if (enablePartyUIHook.Value)
-            {
-                InitializePartyUIHook();
-            }
-
-            // Initialize spell configuration UI
-            InitializeSpellConfigUI();
+            // Add a small delay to ensure EventSystem is properly registered
+            StartCoroutine(DelayedInitialization());
         }
 
         private void InitializePartyUIHook()
@@ -128,11 +125,11 @@ namespace ErenshorHealbot
             if (spellConfigUI == null)
             {
                 var configUIGO = new GameObject("SpellConfigUI");
-                configUIGO.transform.SetParent(null); // Ensure it's a root object
+                // Don't set parent to null - it starts as root by default
                 DontDestroyOnLoad(configUIGO);
                 spellConfigUI = configUIGO.AddComponent<SpellConfigUI>();
                 spellConfigUI.Initialize(this);
-                
+
             }
         }
 
@@ -598,6 +595,21 @@ namespace ErenshorHealbot
         // --- Cooldown helpers ---
         private readonly System.Collections.Generic.Dictionary<string, float> localCooldownUntil = new System.Collections.Generic.Dictionary<string, float>();
 
+        private System.Collections.IEnumerator DelayedInitialization()
+        {
+            // Wait one frame to ensure EventSystem is properly registered
+            yield return null;
+
+            // Initialize party UI hook instead of creating duplicate UI
+            if (enablePartyUIHook.Value)
+            {
+                InitializePartyUIHook();
+            }
+
+            // Initialize spell configuration UI
+            InitializeSpellConfigUI();
+        }
+
         private bool IsSpellOnCooldown(CastSpell caster, Spell spell, out float remainingSeconds)
         {
             remainingSeconds = 0f;
@@ -947,6 +959,55 @@ namespace ErenshorHealbot
             }
 
             _harmony?.UnpatchSelf();
+        }
+
+        private void EnsureEventSystem()
+        {
+            if (eventSystem != null)
+            {
+                // Ensure our EventSystem is still the active one
+                if (FindObjectsOfType<EventSystem>().Length > 1)
+                {
+                    // Deactivate any other EventSystems
+                    var otherSystems = FindObjectsOfType<EventSystem>();
+                    foreach (var es in otherSystems)
+                    {
+                        if (es != eventSystem)
+                        {
+                            es.enabled = false;
+                        }
+                    }
+                }
+                return;
+            }
+
+            eventSystem = FindObjectOfType<EventSystem>();
+            if (eventSystem == null)
+            {
+                // Create a dedicated EventSystem GameObject as root
+                var eventSystemGO = new GameObject("HealbotEventSystem");
+                // Make sure it's at root level before DontDestroyOnLoad
+                eventSystemGO.transform.SetParent(null);
+                DontDestroyOnLoad(eventSystemGO);
+
+                eventSystem = eventSystemGO.AddComponent<EventSystem>();
+                var inputModule = eventSystemGO.AddComponent<StandaloneInputModule>();
+
+                // Configure input module for proper global input handling
+                inputModule.horizontalAxis = "Horizontal";
+                inputModule.verticalAxis = "Vertical";
+                inputModule.submitButton = "Submit";
+                inputModule.cancelButton = "Cancel";
+
+                // Allow background input for global hotkeys like Ctrl+H
+                inputModule.allowActivationOnMobileDevice = true;
+
+                Logger.LogInfo("Created centralized EventSystem for Healbot");
+            }
+            else
+            {
+                Logger.LogInfo("Using existing EventSystem for Healbot");
+            }
         }
     }
 

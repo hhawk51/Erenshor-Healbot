@@ -57,10 +57,13 @@ namespace ErenshorHealbot
 
         private void Update()
         {
-            // Fallback keybind to open UI (Ctrl+H)
-            if (Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.H))
+            // Fallback keybind to open UI (Ctrl+H) - improved detection
+            if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
             {
-                ToggleConfigWindow();
+                if (Input.GetKeyDown(KeyCode.H))
+                {
+                    ToggleConfigWindow();
+                }
             }
 
             // Allow closing with Escape when visible
@@ -164,11 +167,8 @@ namespace ErenshorHealbot
         {
             try
             {
-                
-
                 if (configPanel != null)
                 {
-                    
                     return;
                 }
 
@@ -177,6 +177,8 @@ namespace ErenshorHealbot
 
                 // Create canvas
                 var canvasGO = new GameObject("SpellConfigCanvas");
+                // Ensure canvas is at root level before DontDestroyOnLoad
+                canvasGO.transform.SetParent(null);
                 DontDestroyOnLoad(canvasGO);
 
                 uiCanvas = canvasGO.AddComponent<Canvas>();
@@ -1264,14 +1266,23 @@ namespace ErenshorHealbot
 
         private void EnsureEventSystem()
         {
+            // EventSystem should already be created by main plugin
             var es = FindObjectOfType<EventSystem>();
             if (es == null)
             {
-                var esGO = new GameObject("HealbotEventSystem");
-                es = esGO.AddComponent<EventSystem>();
-                esGO.AddComponent<StandaloneInputModule>();
-                // Persist to ensure UI remains usable even if scenes change or game lacks one
-                DontDestroyOnLoad(esGO);
+                // Log warning but don't create fallback to avoid conflicts
+                Debug.LogWarning("HealbotPlugin: EventSystem not found, main plugin initialization may have failed");
+
+                // Find the healbot's EventSystem
+                var healbotEventSystems = FindObjectsOfType<EventSystem>();
+                foreach (var eventSystem in healbotEventSystems)
+                {
+                    if (eventSystem.gameObject.name.Contains("HealbotEventSystem"))
+                    {
+                        es = eventSystem;
+                        break;
+                    }
+                }
             }
         }
 

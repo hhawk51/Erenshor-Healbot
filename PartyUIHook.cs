@@ -87,12 +87,23 @@ namespace ErenshorHealbot
 
         private void EnsureEventSystem()
         {
+            // EventSystem should already be created by main plugin
             eventSystem = FindObjectOfType<EventSystem>();
             if (eventSystem == null)
             {
-                var esGO = new GameObject("HealbotEventSystem");
-                eventSystem = esGO.AddComponent<EventSystem>();
-                esGO.AddComponent<StandaloneInputModule>();
+                // Log warning but don't create fallback to avoid conflicts
+                Debug.LogWarning("HealbotPlugin: EventSystem not found, main plugin initialization may have failed");
+
+                // Find the healbot's EventSystem
+                var healbotEventSystems = FindObjectsOfType<EventSystem>();
+                foreach (var es in healbotEventSystems)
+                {
+                    if (es.gameObject.name.Contains("HealbotEventSystem"))
+                    {
+                        eventSystem = es;
+                        break;
+                    }
+                }
             }
         }
 

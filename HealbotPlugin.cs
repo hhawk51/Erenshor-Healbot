@@ -23,8 +23,8 @@ namespace ErenshorHealbot
         private PartyUIHook partyUIHook;
         private SpellConfigUI spellConfigUI;
         private EventSystem eventSystem;
+        private AutoTargetOverlay autoTargetOverlay;
         
-
         // Configuration
         private ConfigEntry<KeyCode> toggleUIKey;
         private ConfigEntry<string> leftClickSpell;
@@ -34,6 +34,7 @@ namespace ErenshorHealbot
         private ConfigEntry<string> shiftRightClickSpell;
         private ConfigEntry<string> shiftMiddleClickSpell;
         private ConfigEntry<bool> autoTargetEnabled;
+        private ConfigEntry<float> autoTargetGraceSeconds;
         private ConfigEntry<float> healthThreshold;
         private ConfigEntry<bool> enablePartyUIHook;
         private ConfigEntry<bool> restrictToBeneficial;
@@ -52,9 +53,15 @@ namespace ErenshorHealbot
         private ConfigEntry<string> healMember2Spell;
         private ConfigEntry<string> healMember3Spell;
         private ConfigEntry<bool> hideLauncherButton;
+        private ConfigEntry<float> overlayPosX;
+        private ConfigEntry<float> overlayPosY;
 
         // Group member tracking for auto-targeting
         private List<GroupMember> groupMembers = new List<GroupMember>();
+        private readonly HashSet<Stats> lastGroupComposition = new HashSet<Stats>();
+        private float autoTargetSuppressedUntil = 0f;
+        private string lastSeenSceneName = string.Empty;
+        private float CurrentTime => Time.unscaledTime > 0f ? Time.unscaledTime : Time.time;
 
         // Character-specific configuration system
         private CharacterConfig currentCharacterConfig;
@@ -73,6 +80,7 @@ namespace ErenshorHealbot
             shiftRightClickSpell = Config.Bind("Spells", "ShiftRightClick", "", "Spell to cast on Shift+Right click (optional)");
             shiftMiddleClickSpell = Config.Bind("Spells", "ShiftMiddleClick", "", "Spell to cast on Shift+Middle click (optional)");
             autoTargetEnabled = Config.Bind("Automation", "AutoTarget", false, "Automatically target low health members");
+            autoTargetGraceSeconds = Config.Bind("Automation", "AutoTargetGraceSeconds", 1.0f, "Seconds to delay auto-targeting after scene or party changes");
             healthThreshold = Config.Bind("Automation", "HealthThreshold", 0.5f, "Health percentage to consider 'low' (0.0-1.0)");
             enablePartyUIHook = Config.Bind("UI", "EnablePartyUIHook", true, "Enable click-to-heal on existing party UI");
             restrictToBeneficial = Config.Bind("Spells", "RestrictToBeneficial", true, "Only allow beneficial spells (heals/buffs) when casting via Healbot");
@@ -91,6 +99,8 @@ namespace ErenshorHealbot
             healMember2Spell = Config.Bind("KeybindSpells", "HealMember2Spell", "Minor Healing", "Spell to cast when healing party member 2");
             healMember3Spell = Config.Bind("KeybindSpells", "HealMember3Spell", "Minor Healing", "Spell to cast when healing party member 3");
             hideLauncherButton = Config.Bind("UI", "HideLauncherButton", false, "Hide the launcher button (can still use Ctrl+H to open config)");
+            overlayPosX = Config.Bind("UI", "OverlayPosX", -40f, "Saved anchored X for auto-target overlay (top-right anchor)");
+            overlayPosY = Config.Bind("UI", "OverlayPosY", 40f, "Saved anchored Y for auto-target overlay (top-right anchor)");
 
             _harmony = new Harmony("Hawtin.Erenshor.Healbot");
             try
@@ -107,6 +117,19 @@ namespace ErenshorHealbot
 
             // Add a small delay to ensure EventSystem is properly registered
             StartCoroutine(DelayedInitialization());
+
+            // Prime scene tracking for auto-target suppression
+            try
+            {
+                var activeScene = SceneManager.GetActiveScene();
+                lastSeenSceneName = activeScene.IsValid() ? (activeScene.name ?? string.Empty) : string.Empty;
+            }
+            catch
+            {
+                lastSeenSceneName = string.Empty;
+            }
+
+            SuppressAutoTarget("Initialization");
         }
 
         private void InitializePartyUIHook()
@@ -129,9 +152,64 @@ namespace ErenshorHealbot
                 DontDestroyOnLoad(configUIGO);
                 spellConfigUI = configUIGO.AddComponent<SpellConfigUI>();
                 spellConfigUI.Initialize(this);
-
             }
         }
+
+        private void InitializeAutoTargetOverlay()
+
+        {
+
+            if (autoTargetOverlay == null)
+
+            {
+
+                var overlayGO = new GameObject("AutoTargetOverlay");
+
+                overlayGO.transform.SetParent(null);
+
+                DontDestroyOnLoad(overlayGO);
+
+                autoTargetOverlay = overlayGO.AddComponent<AutoTargetOverlay>();
+
+                autoTargetOverlay.Initialize(this);
+
+                autoTargetOverlay.SetAnchoredPosition(GetSavedOverlayPos());
+
+            }
+
+
+
+            if (autoTargetOverlay == null)
+
+                return;
+
+
+
+            bool autoEnabled = autoTargetEnabled != null && autoTargetEnabled.Value;
+
+            autoTargetOverlay.OnAutoTargetToggle(autoEnabled);
+
+
+
+            if (autoEnabled && IsAutoTargetSuppressed())
+
+            {
+
+                autoTargetOverlay.ShowSuppression(Mathf.Max(0f, autoTargetSuppressedUntil - CurrentTime), "Auto-target paused");
+
+            }
+
+            else
+
+            {
+
+                UpdateOverlayWithLowestMember();
+
+            }
+
+        }
+
+
 
         public string GetSpellForButton(PointerEventData.InputButton button)
         {
@@ -154,6 +232,24 @@ namespace ErenshorHealbot
             }
 
             return spell;
+        }
+
+        public string GetAutoTargetOverlaySpell()
+
+        {
+
+            var spell = healPlayerSpell != null ? healPlayerSpell.Value : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(spell) || spell.Equals("None", StringComparison.OrdinalIgnoreCase))
+
+            {
+
+                spell = leftClickSpell != null ? leftClickSpell.Value : string.Empty;
+
+            }
+
+            return spell ?? string.Empty;
+
         }
 
         public void UpdateSpellBindings(string leftSpell, string rightSpell, string middleSpell)
@@ -195,6 +291,51 @@ namespace ErenshorHealbot
             // Save character config when settings change
             if (!string.IsNullOrEmpty(lastPlayerIdentity))
                 SaveCharacterConfig(lastPlayerIdentity);
+        }
+
+        public bool IsAutoTargetEnabled => autoTargetEnabled != null && autoTargetEnabled.Value;
+
+        public void SetAutoTargetEnabled(bool enabled)
+        {
+            if (autoTargetEnabled == null)
+                return;
+
+            bool wasEnabled = autoTargetEnabled.Value;
+            autoTargetEnabled.Value = enabled;
+
+            autoTargetOverlay?.OnAutoTargetToggle(enabled);
+
+            if (wasEnabled == enabled)
+            {
+                if (spellConfigUI != null)
+                {
+                    spellConfigUI.SetAutoTargetToggleState(enabled);
+                }
+                return;
+            }
+
+            if (currentCharacterConfig != null)
+            {
+                currentCharacterConfig.AutoTargetEnabled = enabled;
+            }
+
+            if (enabled && !wasEnabled)
+            {
+                SuppressAutoTarget("Auto-target toggled on");
+            }
+            else if (!enabled)
+            {
+                autoTargetOverlay?.ClearTarget();
+            }
+
+            SaveCurrentCharacterConfig();
+
+            if (spellConfigUI != null)
+            {
+                spellConfigUI.SetAutoTargetToggleState(enabled);
+            }
+
+            UpdateOverlayWithLowestMember();
         }
 
         public void UpdateShiftSpellBindings(string shiftLeft, string shiftRight, string shiftMiddle)
@@ -241,6 +382,13 @@ namespace ErenshorHealbot
             launcherPosY.Value = pos.y;
         }
 
+        public Vector2 GetSavedOverlayPos() => new Vector2(overlayPosX.Value, overlayPosY.Value);
+        public void SaveOverlayPos(Vector2 pos)
+        {
+            overlayPosX.Value = pos.x;
+            overlayPosY.Value = pos.y;
+        }
+
         private void Update()
         {
             // UI hook stays enabled; disable toggle hotkey
@@ -253,14 +401,99 @@ namespace ErenshorHealbot
             // Update group members for auto-targeting
             UpdateGroupMembers();
 
-            // Auto-targeting for low health members
-            if (autoTargetEnabled.Value)
+            // Delay auto-targeting while scenes/party members settle
+            UpdateAutoTargetSuppression();
+
+            UpdateOverlayWithLowestMember();
+
+            if (ShouldAutoTarget())
             {
                 CheckAutoTarget();
             }
 
             // Detect character switch and invalidate spell cache for UI
             RefreshSpellCacheOnCharacterSwitch();
+        }
+
+        private void UpdateAutoTargetSuppression()
+        {
+            try
+            {
+                var activeScene = SceneManager.GetActiveScene();
+                var sceneName = activeScene.IsValid() ? (activeScene.name ?? string.Empty) : string.Empty;
+                if (!string.Equals(sceneName, lastSeenSceneName, StringComparison.Ordinal))
+                {
+                    lastSeenSceneName = sceneName;
+                    SuppressAutoTarget("Scene changed");
+                }
+            }
+            catch { }
+        }
+
+        private bool ShouldAutoTarget()
+        {
+            if (!autoTargetEnabled.Value)
+                return false;
+            if (IsAutoTargetSuppressed())
+                return false;
+            if (!IsCharacterLoggedIn())
+                return false;
+            return true;
+        }
+
+        private bool IsAutoTargetSuppressed()
+        {
+            return CurrentTime < autoTargetSuppressedUntil;
+        }
+
+        private void SuppressAutoTarget(string reason, float? durationOverrideSeconds = null)
+        {
+            if (reason == null) { } // reason reserved for future debug logging
+
+            string overlayMessage = "Auto-target paused";
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                switch (reason)
+                {
+                    case "Initialization":
+                        overlayMessage = "Waiting for character data";
+                        break;
+                    case "Scene changed":
+                        overlayMessage = "Syncing after scene change";
+                        break;
+                    case "Party composition changed":
+                        overlayMessage = "Updating party roster";
+                        break;
+                    case "Target missing character":
+                        overlayMessage = "Target not ready";
+                        break;
+                    case "Auto-target toggled on":
+                        overlayMessage = "Auto-target starting";
+                        break;
+                    case "Targeting failed":
+                        overlayMessage = "Targeting failed";
+                        break;
+                    default:
+                        overlayMessage = reason;
+                        break;
+                }
+            }
+
+            float grace = durationOverrideSeconds ?? (autoTargetGraceSeconds != null ? Mathf.Max(0f, autoTargetGraceSeconds.Value) : 0f);
+            if (grace <= 0f)
+            {
+                autoTargetSuppressedUntil = CurrentTime;
+                autoTargetOverlay?.ShowSuppression(0f, overlayMessage);
+                return;
+            }
+
+            float resumeAt = CurrentTime + grace;
+            if (resumeAt > autoTargetSuppressedUntil)
+            {
+                autoTargetSuppressedUntil = resumeAt;
+            }
+
+            autoTargetOverlay?.ShowSuppression(Mathf.Max(0f, autoTargetSuppressedUntil - CurrentTime), overlayMessage);
         }
 
         private string lastPlayerIdentity = null;
@@ -388,6 +621,8 @@ namespace ErenshorHealbot
 
         private void UpdateGroupMembers()
         {
+            var previousComposition = new HashSet<Stats>(lastGroupComposition);
+            lastGroupComposition.Clear();
             groupMembers.Clear();
 
             // Add player
@@ -403,16 +638,22 @@ namespace ErenshorHealbot
                     name = playerName,
                     isPlayer = true
                 });
+
+                lastGroupComposition.Add(GameData.PlayerStats);
             }
 
             // Add party members from GameData.GroupMembers
-            for (int i = 0; i < GameData.GroupMembers.Length; i++)
+            var members = GameData.GroupMembers;
+            if (members != null)
             {
-                var tracking = GameData.GroupMembers[i];
-                if (tracking != null && tracking.MyAvatar != null && tracking.MyAvatar.MyStats != null)
+                for (int i = 0; i < members.Length; i++)
                 {
-                    var s = tracking.MyAvatar.MyStats;
-                    string displayName = !string.IsNullOrEmpty(s.MyName) ? s.MyName : tracking.SimName;
+                    var tracking = members[i];
+                    var stats = tracking?.MyAvatar?.MyStats;
+                    if (stats == null)
+                        continue;
+
+                    string displayName = !string.IsNullOrEmpty(stats.MyName) ? stats.MyName : tracking.SimName;
                     var npc = tracking.MyAvatar.GetComponent<NPC>();
                     if (npc != null && !string.IsNullOrEmpty(npc.NPCName))
                         displayName = npc.NPCName;
@@ -423,11 +664,20 @@ namespace ErenshorHealbot
 
                     groupMembers.Add(new GroupMember
                     {
-                        stats = s,
+                        stats = stats,
                         name = displayName,
                         isPlayer = false
                     });
+
+                    lastGroupComposition.Add(stats);
                 }
+            }
+
+            lastGroupComposition.RemoveWhere(s => s == null);
+
+            if (!previousComposition.SetEquals(lastGroupComposition))
+            {
+                SuppressAutoTarget("Party composition changed");
             }
         }
 
@@ -460,28 +710,165 @@ namespace ErenshorHealbot
             return null;
         }
 
-        private void CheckAutoTarget()
+
+
+        private GroupMember GetLowestHealthMember(out float healthFraction)
+
         {
-            var lowHealthMembers = groupMembers
-                .Where(gm => gm.stats != null && gm.stats.CurrentMaxHP > 0 && gm.stats.CurrentHP > 0 && ((float)gm.stats.CurrentHP / (float)gm.stats.CurrentMaxHP) < healthThreshold.Value)
-                .OrderBy(gm => (float)gm.stats.CurrentHP / (float)gm.stats.CurrentMaxHP)
+
+            healthFraction = 0f;
+
+            var candidates = groupMembers
+
+                .Where(gm => gm != null && gm.stats != null && gm.stats.CurrentMaxHP > 0)
+
+                .Select(gm => new
+
+                {
+
+                    Member = gm,
+
+                    Fraction = Mathf.Clamp01((float)gm.stats.CurrentHP / (float)gm.stats.CurrentMaxHP)
+
+                })
+
+                .OrderBy(x => x.Fraction)
+
                 .ToList();
 
-            if (lowHealthMembers.Any())
-            {
-                // Auto-target the lowest health member
-                var target = lowHealthMembers.First();
-                if (GameData.PlayerControl != null && target.stats != null)
-                {
-                    if (GameData.PlayerControl.CurrentTarget != null)
-                        GameData.PlayerControl.CurrentTarget.UntargetMe();
 
-                    GameData.PlayerControl.CurrentTarget = target.stats.Myself;
-                    GameData.PlayerControl.CurrentTarget.TargetMe();
-                }
-            }
+
+            if (!candidates.Any())
+
+                return null;
+
+
+
+            var best = candidates.First();
+
+            healthFraction = best.Fraction;
+
+            return best.Member;
+
         }
 
+
+
+        private string GetDisplayNameForMember(GroupMember member)
+
+        {
+
+            if (member == null)
+
+                return "Unknown";
+
+
+
+            if (!string.IsNullOrEmpty(member.name))
+
+                return member.name;
+
+
+
+            var statsName = member.stats?.MyName;
+
+            if (!string.IsNullOrEmpty(statsName))
+
+                return statsName;
+
+
+
+            return member.isPlayer ? "Player" : "Party member";
+
+        }
+
+
+
+        private void UpdateOverlayWithLowestMember()
+
+        {
+
+            if (autoTargetOverlay == null)
+
+                return;
+
+
+
+            if (IsAutoTargetSuppressed())
+
+                return;
+
+
+
+            var lowest = GetLowestHealthMember(out var fraction);
+
+            if (lowest?.stats == null)
+
+            {
+
+                autoTargetOverlay.ClearTarget();
+
+                return;
+
+            }
+
+
+
+            var displayName = GetDisplayNameForMember(lowest);
+
+            autoTargetOverlay.UpdateTarget(lowest.stats, displayName, fraction, GetAutoTargetOverlaySpell());
+
+        }
+
+
+
+                private void CheckAutoTarget()
+        {
+            if (!ShouldAutoTarget())
+                return;
+
+            var targetMember = GetLowestHealthMember(out var healthFraction);
+            if (targetMember?.stats == null)
+                return;
+
+            var targetStats = targetMember.stats;
+            var targetCharacter = targetStats.Myself;
+            if (targetCharacter == null)
+            {
+                SuppressAutoTarget("Target missing character", 0.5f);
+                return;
+            }
+
+            float threshold = Mathf.Clamp01(healthThreshold.Value);
+            if (threshold <= 0f)
+                return;
+
+            if (healthFraction >= threshold)
+                return;
+
+            var playerControl = GameData.PlayerControl;
+            if (playerControl == null)
+                return;
+
+            if (playerControl.CurrentTarget == targetCharacter)
+                return;
+
+            try
+            {
+                if (playerControl.CurrentTarget != null)
+                {
+                    playerControl.CurrentTarget.UntargetMe();
+                }
+
+                playerControl.CurrentTarget = targetCharacter;
+                targetCharacter.TargetMe();
+            }
+            catch
+            {
+                SuppressAutoTarget("Targeting failed", 0.5f);
+            }
+        }
+
         public void CastSpellOnTarget(Stats target, string spellName)
         {
             if (target == null || string.IsNullOrEmpty(spellName)) return;
@@ -608,6 +995,9 @@ namespace ErenshorHealbot
 
             // Initialize spell configuration UI
             InitializeSpellConfigUI();
+
+            // Initialize auto-target overlay
+            InitializeAutoTargetOverlay();
         }
 
         private bool IsSpellOnCooldown(CastSpell caster, Spell spell, out float remainingSeconds)
@@ -826,6 +1216,16 @@ namespace ErenshorHealbot
                 {
                     var json = File.ReadAllText(configPath);
                     currentCharacterConfig = JsonUtility.FromJson<CharacterConfig>(json);
+                    if (currentCharacterConfig == null)
+                    {
+                        currentCharacterConfig = new CharacterConfig();
+                    }
+
+                    if (!string.IsNullOrEmpty(json) && !json.Contains("\"AutoTargetEnabled\""))
+                    {
+                        currentCharacterConfig.AutoTargetEnabled = autoTargetEnabled.Value;
+                    }
+
                     // Apply loaded config to current settings
                     ApplyCharacterConfig();
                 }
@@ -848,7 +1248,8 @@ namespace ErenshorHealbot
                         HealMember2Spell = defaultKeybindSpell,
                         HealMember3Spell = defaultKeybindSpell,
                         HideLauncherButton = hideLauncherButton.Value,
-                        KnownOnlySpellPicker = false // Default to false for new characters
+                        KnownOnlySpellPicker = false, // Default to false for new characters
+                        AutoTargetEnabled = autoTargetEnabled.Value
                     };
 
                     SaveCharacterConfig(characterName);
@@ -882,6 +1283,7 @@ namespace ErenshorHealbot
                 currentCharacterConfig.HealMember2Spell = healMember2Spell.Value;
                 currentCharacterConfig.HealMember3Spell = healMember3Spell.Value;
                 currentCharacterConfig.HideLauncherButton = hideLauncherButton.Value;
+                currentCharacterConfig.AutoTargetEnabled = autoTargetEnabled.Value;
 
                 // Get known-only setting from UI if available
                 if (spellConfigUI != null)
@@ -925,11 +1327,13 @@ namespace ErenshorHealbot
 
                 // Apply UI settings
                 hideLauncherButton.Value = currentCharacterConfig.HideLauncherButton;
+                autoTargetEnabled.Value = currentCharacterConfig.AutoTargetEnabled;
 
                 // Apply known-only setting to UI if available
                 if (spellConfigUI != null)
                 {
                     spellConfigUI.SetKnownOnlyToggleState(currentCharacterConfig.KnownOnlySpellPicker);
+                    spellConfigUI.SetAutoTargetToggleState(autoTargetEnabled.Value);
                 }
 
             }
@@ -956,6 +1360,12 @@ namespace ErenshorHealbot
             if (spellConfigUI != null)
             {
                 Destroy(spellConfigUI.gameObject);
+            }
+
+            if (autoTargetOverlay != null)
+            {
+                Destroy(autoTargetOverlay.gameObject);
+                autoTargetOverlay = null;
             }
 
             _harmony?.UnpatchSelf();
@@ -1035,5 +1445,10 @@ namespace ErenshorHealbot
         public string HealMember3Spell;
         public bool HideLauncherButton;
         public bool KnownOnlySpellPicker;
+        public bool AutoTargetEnabled;
     }
 }
+
+
+
+

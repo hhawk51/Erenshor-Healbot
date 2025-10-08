@@ -20,6 +20,7 @@ namespace ErenshorHealbot
         private Text launcherText;
         private Toggle knownOnlyToggle;
         private Toggle hideLauncherToggle;
+        private Toggle autoTargetToggle;
 
         // Spell picker UI
         private GameObject spellPickerPanel;
@@ -318,6 +319,7 @@ namespace ErenshorHealbot
 
             // Instructions
             CreateLabel("Use Ctrl+H to open this window", new Vector2(0, -240), 12, FontStyle.Normal);
+            CreateAutoTargetToggle();
             CreateKnownOnlyToggle();
             CreateHideLauncherToggle();
         }
@@ -857,6 +859,11 @@ namespace ErenshorHealbot
                     hideLauncherToggle.isOn = plugin.IsLauncherButtonHidden;
                 }
 
+                if (autoTargetToggle != null && plugin != null)
+                {
+                    autoTargetToggle.SetIsOnWithoutNotify(plugin.IsAutoTargetEnabled);
+                }
+
             }
             catch { }
         }
@@ -968,12 +975,55 @@ namespace ErenshorHealbot
             }
         }
 
+        public void SetAutoTargetToggleState(bool isOn)
+        {
+            if (autoTargetToggle != null)
+            {
+                autoTargetToggle.SetIsOnWithoutNotify(isOn);
+            }
+        }
+
         private void OnDestroy()
         {
             if (uiCanvas != null)
             {
                 Destroy(uiCanvas.gameObject);
             }
+        }
+
+        private void CreateAutoTargetToggle()
+        {
+            if (autoTargetToggle != null) return;
+
+            var container = new GameObject("AutoTarget");
+            container.transform.SetParent(configPanel.transform, false);
+            var rect = container.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(220, 24);
+            rect.anchoredPosition = new Vector2(0, -170);
+
+            var bgGO = new GameObject("Background");
+            bgGO.transform.SetParent(container.transform, false);
+            var bgRect = bgGO.AddComponent<RectTransform>();
+            bgRect.sizeDelta = new Vector2(18, 18);
+            bgRect.anchoredPosition = new Vector2(-75, 0);
+            var bgImg = bgGO.AddComponent<Image>();
+            bgImg.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
+
+            var ckGO = new GameObject("Checkmark");
+            ckGO.transform.SetParent(bgGO.transform, false);
+            var ckRect = ckGO.AddComponent<RectTransform>();
+            ckRect.sizeDelta = new Vector2(14, 14);
+            ckRect.anchoredPosition = Vector2.zero;
+            var ckImg = ckGO.AddComponent<Image>();
+            ckImg.color = new Color(0.8f, 0.8f, 0.8f, 1f);
+
+            autoTargetToggle = container.AddComponent<Toggle>();
+            autoTargetToggle.targetGraphic = bgImg;
+            autoTargetToggle.graphic = ckImg;
+            autoTargetToggle.SetIsOnWithoutNotify(plugin != null && plugin.IsAutoTargetEnabled);
+            autoTargetToggle.onValueChanged.AddListener(OnAutoTargetToggleChanged);
+
+            CreateChildLabel(container.transform, "Enable auto-target", new Vector2(20, 0), 12, FontStyle.Normal, TextAnchor.MiddleLeft, new Vector2(160, 20));
         }
 
         private void CreateKnownOnlyToggle()
@@ -1044,6 +1094,15 @@ namespace ErenshorHealbot
             hideLauncherToggle.onValueChanged.AddListener(OnHideLauncherToggled);
 
             CreateChildLabel(container.transform, "Hide launcher button", new Vector2(20, 0), 12, FontStyle.Normal, TextAnchor.MiddleLeft, new Vector2(150, 20));
+        }
+
+        private void OnAutoTargetToggleChanged(bool isOn)
+        {
+            if (plugin != null)
+            {
+                plugin.SetAutoTargetEnabled(isOn);
+                UpdateStatusText(isOn ? "Auto-target enabled" : "Auto-target disabled");
+            }
         }
 
         private void OnHideLauncherToggled(bool isHidden)
@@ -1358,3 +1417,4 @@ namespace ErenshorHealbot
         }
     }
 }
+

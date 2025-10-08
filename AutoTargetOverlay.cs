@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace ErenshorHealbot
 {
@@ -10,16 +10,17 @@ namespace ErenshorHealbot
         private HealbotPlugin plugin;
         private Canvas overlayCanvas;
         private RectTransform panelRect;
-        private Text headingText;
-        private Text targetNameText;
+        private Image backgroundImage;
+        private Button interactButton;
+        private Text titleText;
+        private Text subtitleText;
         private Text healthText;
-        private Text spellText;
         private Text statusText;
-        private Button healButton;
 
         private Stats currentTarget;
         private string currentSpell = string.Empty;
         private bool overlayEnabled = true;
+        private bool isVisible = true;
         private float suppressedUntil = 0f;
         private Vector2 dragStartPointer;
         private Vector2 dragStartAnchored;
@@ -33,6 +34,9 @@ namespace ErenshorHealbot
             {
                 CreateUI();
             }
+
+            currentSpell = SanitizeSpell(plugin?.GetAutoTargetOverlaySpell());
+            RefreshBindings();
             ShowIdleState();
         }
 
@@ -54,42 +58,34 @@ namespace ErenshorHealbot
             panelRect.anchorMin = new Vector2(1f, 0f);
             panelRect.anchorMax = new Vector2(1f, 0f);
             panelRect.pivot = new Vector2(1f, 0f);
-            panelRect.sizeDelta = new Vector2(260f, 110f);
+            panelRect.sizeDelta = new Vector2(210f, 76f);
             panelRect.anchoredPosition = new Vector2(-40f, 40f);
 
-            var background = panelGO.AddComponent<Image>();
-            background.color = new Color(0.08f, 0.08f, 0.08f, 0.9f);
-            background.raycastTarget = true;
+            backgroundImage = panelGO.AddComponent<Image>();
+            backgroundImage.color = new Color(0.33f, 0.41f, 0.19f, 0.94f);
+            backgroundImage.raycastTarget = true;
 
-            var dragHandler = panelGO.AddComponent<OverlayDragHandler>();
-            dragHandler.Initialize(this);
-
-            healButton = panelGO.AddComponent<Button>();
-            healButton.targetGraphic = background;
-            var colors = healButton.colors;
-            colors.normalColor = background.color;
-            colors.highlightedColor = new Color(0.15f, 0.15f, 0.15f, 0.92f);
-            colors.pressedColor = new Color(0.05f, 0.05f, 0.05f, 0.95f);
+            interactButton = panelGO.AddComponent<Button>();
+            interactButton.targetGraphic = backgroundImage;
+            var colors = interactButton.colors;
+            colors.normalColor = backgroundImage.color;
+            colors.highlightedColor = new Color(0.47f, 0.57f, 0.30f, 0.97f);
+            colors.pressedColor = new Color(0.27f, 0.35f, 0.17f, 0.99f);
             colors.selectedColor = colors.normalColor;
-            colors.disabledColor = new Color(0.08f, 0.08f, 0.08f, 0.4f);
-            healButton.colors = colors;
-            healButton.onClick.AddListener(OnHealButtonClicked);
+            colors.disabledColor = new Color(0.23f, 0.31f, 0.15f, 0.55f);
+            interactButton.colors = colors;
 
-            headingText = CreateLabel(panelGO.transform, "Auto Target", new Vector2(12f, -12f), 16, FontStyle.Bold);
-            targetNameText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -34f), 18, FontStyle.Bold);
-            healthText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -56f), 14, FontStyle.Normal);
-            spellText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -76f), 14, FontStyle.Normal);
-            statusText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -96f), 12, FontStyle.Italic);
+            var interactionHandler = panelGO.AddComponent<OverlayInteractionHandler>();
+            interactionHandler.Initialize(this);
+
+            titleText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -12f), 18, FontStyle.Bold);
+            subtitleText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -34f), 13, FontStyle.Normal);
+            subtitleText.color = new Color(0.8f, 0.8f, 0.8f, 1f);
+            healthText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -46f), 13, FontStyle.Normal);
+            statusText = CreateLabel(panelGO.transform, string.Empty, new Vector2(12f, -58f), 11, FontStyle.Italic);
+            statusText.color = new Color(0.75f, 0.75f, 0.75f, 1f);
 
             panelGO.SetActive(false);
-        }
-
-        public void SetAnchoredPosition(Vector2 anchoredPosition)
-        {
-            if (panelRect == null)
-                return;
-
-            panelRect.anchoredPosition = anchoredPosition;
         }
 
         private Text CreateLabel(Transform parent, string initialText, Vector2 offset, int fontSize, FontStyle fontStyle)
@@ -114,24 +110,6 @@ namespace ErenshorHealbot
             return text;
         }
 
-        private void ShowIdleState()
-        {
-            if (panelRect == null)
-                return;
-
-            var idleSpell = plugin != null ? plugin.GetAutoTargetOverlaySpell() : string.Empty;
-            bool hasSpell = overlayEnabled && !string.IsNullOrWhiteSpace(idleSpell) && !idleSpell.Equals("None", StringComparison.OrdinalIgnoreCase);
-
-            headingText.text = "Auto Target";
-            targetNameText.text = overlayEnabled ? "Waiting for target" : "Auto-target disabled";
-            healthText.text = string.Empty;
-            spellText.text = hasSpell ? $"Click to cast {idleSpell}" : (overlayEnabled ? "Monitoring party..." : "Auto-target disabled");
-            statusText.text = string.Empty;
-            healButton.interactable = hasSpell;
-
-            ShowPanel();
-        }
-
         private void Update()
         {
             if (suppressedUntil > 0f)
@@ -153,11 +131,33 @@ namespace ErenshorHealbot
             }
         }
 
+        public void SetAnchoredPosition(Vector2 anchoredPosition)
+        {
+            if (panelRect == null)
+                return;
+
+            panelRect.anchoredPosition = anchoredPosition;
+        }
+
+        public void SetVisible(bool visible)
+        {
+            isVisible = visible;
+            if (overlayCanvas != null)
+                overlayCanvas.enabled = visible;
+            if (panelRect != null)
+                panelRect.gameObject.SetActive(visible);
+
+            if (visible)
+            {
+                ShowPanel();
+            }
+        }
+
         public void UpdateTarget(Stats target, string displayName, float healthFraction, string spellName)
         {
             suppressedUntil = 0f;
             currentTarget = target;
-            currentSpell = spellName ?? string.Empty;
+            currentSpell = SanitizeSpell(spellName);
 
             if (!overlayEnabled || target == null)
             {
@@ -165,32 +165,28 @@ namespace ErenshorHealbot
                 return;
             }
 
-            headingText.text = "Auto Target";
-            targetNameText.text = string.IsNullOrWhiteSpace(displayName) ? "Unknown target" : displayName;
+            subtitleText.text = !string.IsNullOrWhiteSpace(displayName) ? displayName : "Party member";
+            titleText.text = "Lowest HP target";
             healthText.text = $"Health {Mathf.Clamp01(healthFraction) * 100f:0}%";
-
-            bool hasSpell = !string.IsNullOrWhiteSpace(currentSpell) && !currentSpell.Equals("None", StringComparison.OrdinalIgnoreCase);
-            spellText.text = hasSpell ? $"Click to cast {currentSpell}" : "Configure a heal spell for auto-target";
             statusText.text = string.Empty;
-            healButton.interactable = hasSpell;
 
+            RefreshBindings();
             ShowPanel();
         }
 
         public void ClearTarget()
         {
             currentTarget = null;
-            currentSpell = string.Empty;
+            currentSpell = SanitizeSpell(plugin?.GetAutoTargetOverlaySpell());
 
             if (panelRect == null)
                 return;
 
-            healButton.interactable = false;
+            healthText.text = string.Empty;
 
             if (suppressedUntil > Time.unscaledTime)
             {
-                healthText.text = string.Empty;
-                spellText.text = string.Empty;
+                RefreshBindings();
                 ShowPanel();
                 return;
             }
@@ -202,7 +198,7 @@ namespace ErenshorHealbot
         public void ShowSuppression(float seconds, string reason)
         {
             currentTarget = null;
-            currentSpell = string.Empty;
+            currentSpell = SanitizeSpell(plugin?.GetAutoTargetOverlaySpell());
             if (!overlayEnabled)
             {
                 suppressedUntil = 0f;
@@ -212,12 +208,11 @@ namespace ErenshorHealbot
 
             suppressedUntil = seconds > 0f ? Time.unscaledTime + seconds : Time.unscaledTime;
 
-            headingText.text = "Auto Target";
-            targetNameText.text = string.IsNullOrWhiteSpace(reason) ? "Auto-target paused" : reason;
+            titleText.text = string.IsNullOrWhiteSpace(reason) ? "Auto-target paused" : reason;
+            subtitleText.text = string.Empty;
             healthText.text = string.Empty;
-            spellText.text = string.Empty;
             statusText.text = seconds > 0f ? $"Waiting {seconds:0.0}s..." : "Waiting...";
-            healButton.interactable = false;
+            UpdateInteractableState();
 
             ShowPanel();
         }
@@ -231,32 +226,72 @@ namespace ErenshorHealbot
             }
 
             ClearTarget();
+            RefreshBindings();
         }
 
-        private void OnHealButtonClicked()
+        public void RefreshBindings()
         {
-            if (!overlayEnabled)
-                return;
-            if (currentTarget == null)
-                return;
-            if (Time.unscaledTime < clickSuppressUntil)
-                return;
-            if (string.IsNullOrWhiteSpace(currentSpell) || currentSpell.Equals("None", StringComparison.OrdinalIgnoreCase))
-            {
-                statusText.text = "No heal spell configured.";
-                healButton.interactable = false;
-                return;
-            }
-
-            plugin?.CastSpellOnTarget(currentTarget, currentSpell);
+            UpdateInteractableState();
         }
 
-        private void ShowPanel()
+        private void ShowIdleState()
         {
             if (panelRect == null)
                 return;
 
-            panelRect.gameObject.SetActive(true);
+            if (string.IsNullOrEmpty(currentSpell))
+            {
+                currentSpell = SanitizeSpell(plugin?.GetAutoTargetOverlaySpell());
+            }
+
+            if (!overlayEnabled)
+            {
+                titleText.text = "Auto-target disabled";
+                subtitleText.text = string.Empty;
+                healthText.text = string.Empty;
+                statusText.text = string.Empty;
+            }
+            else
+            {
+                titleText.text = "Waiting for target";
+                subtitleText.text = string.Empty;
+                healthText.text = string.Empty;
+                statusText.text = string.Empty;
+            }
+
+            RefreshBindings();
+            ShowPanel();
+        }
+
+        private void UpdateInteractableState()
+        {
+            if (interactButton != null)
+            {
+                interactButton.interactable = overlayEnabled && HasAnyAvailableSpell();
+            }
+        }
+
+        private bool HasAnyAvailableSpell()
+        {
+            if (!string.IsNullOrEmpty(SanitizeSpell(currentSpell)))
+                return true;
+
+            if (plugin == null)
+                return false;
+
+            var left = plugin.GetOverlayBinding(PointerEventData.InputButton.Left);
+            if (!string.IsNullOrEmpty(SanitizeSpell(left.primary)) || !string.IsNullOrEmpty(SanitizeSpell(left.shift)))
+                return true;
+
+            var right = plugin.GetOverlayBinding(PointerEventData.InputButton.Right);
+            if (!string.IsNullOrEmpty(SanitizeSpell(right.primary)) || !string.IsNullOrEmpty(SanitizeSpell(right.shift)))
+                return true;
+
+            var middle = plugin.GetOverlayBinding(PointerEventData.InputButton.Middle);
+            if (!string.IsNullOrEmpty(SanitizeSpell(middle.primary)) || !string.IsNullOrEmpty(SanitizeSpell(middle.shift)))
+                return true;
+
+            return false;
         }
 
         private void HandlePointerDown(PointerEventData eventData)
@@ -313,7 +348,77 @@ namespace ErenshorHealbot
             isDragging = false;
         }
 
-        private sealed class OverlayDragHandler : MonoBehaviour, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
+        private void HandlePointerClick(PointerEventData eventData)
+        {
+            if (!overlayEnabled)
+                return;
+
+            if (plugin == null || currentTarget == null)
+            {
+                statusText.text = "No target to heal.";
+                return;
+            }
+
+            if (Time.unscaledTime < clickSuppressUntil)
+                return;
+
+            if (interactButton != null && !interactButton.interactable)
+            {
+                statusText.text = "Configure overlay spells in Healbot settings.";
+                return;
+            }
+
+            string spellName = SanitizeSpell(plugin.GetSpellForButton(eventData.button));
+            if (string.IsNullOrEmpty(spellName))
+            {
+                spellName = SanitizeSpell(currentSpell);
+            }
+
+            if (string.IsNullOrEmpty(spellName))
+            {
+                statusText.text = $"No spell bound for {GetButtonLabel(eventData.button)}.";
+                return;
+            }
+
+            statusText.text = string.Empty;
+            plugin.CastSpellOnTarget(currentTarget, spellName);
+        }
+
+        private static string GetButtonLabel(PointerEventData.InputButton button)
+        {
+            switch (button)
+            {
+                case PointerEventData.InputButton.Left:
+                    return "LMB";
+                case PointerEventData.InputButton.Right:
+                    return "RMB";
+                case PointerEventData.InputButton.Middle:
+                    return "MMB";
+                default:
+                    return button.ToString();
+            }
+        }
+
+        private static string SanitizeSpell(string spell)
+        {
+            if (string.IsNullOrWhiteSpace(spell))
+                return string.Empty;
+
+            var trimmed = spell.Trim();
+            return trimmed.Equals("None", StringComparison.OrdinalIgnoreCase) ? string.Empty : trimmed;
+        }
+
+        private void ShowPanel()
+        {
+            if (panelRect == null)
+                return;
+            if (!isVisible)
+                return;
+
+            panelRect.gameObject.SetActive(true);
+        }
+
+        private sealed class OverlayInteractionHandler : MonoBehaviour, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
         {
             private AutoTargetOverlay owner;
 
@@ -341,15 +446,11 @@ namespace ErenshorHealbot
             {
                 owner?.HandleEndDrag(eventData);
             }
-        }
 
+            public void OnPointerClick(PointerEventData eventData)
+            {
+                owner?.HandlePointerClick(eventData);
+            }
+        }
     }
 }
-
-
-
-
-
-
-
-
